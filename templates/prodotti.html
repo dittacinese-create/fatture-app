@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="topbar">
+    <h1>Prodotti</h1>
+</div>
+
+<div class="card">
+    <h2 style="font-size:15px; font-weight:600; margin-bottom:1rem;">Nuovo prodotto</h2>
+    <form method="POST" action="/add_prodotto">
+        <div class="form-row" style="align-items:flex-end;">
+            <div class="form-group" style="flex:2;">
+                <label>Nome prodotto *</label>
+                <input name="nome" placeholder="es. Quadrettoni 80x80 sp 3/5 misto" required>
+            </div>
+            <div class="form-group" style="max-width:160px;">
+                <label>Prezzo base (€/u.) *</label>
+                <input type="number" step="0.01" name="prezzo_base" placeholder="0.00" required>
+            </div>
+            <div class="form-group" style="max-width:130px; flex:none;">
+                <label>&nbsp;</label>
+                <button type="submit" class="btn btn-primary" style="width:100%;">Salva prodotto</button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<div class="topbar" style="margin-top:1.5rem; margin-bottom:1rem;">
+    <h2 style="font-size:16px; font-weight:600;">
+        Catalogo prodotti
+        <span style="font-size:13px; font-weight:400; color:#6b7280; margin-left:8px;">{{ prodotti|length }} prodotti</span>
+    </h2>
+    <div class="search-bar">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="search_prodotto" placeholder="Cerca prodotto..." oninput="cercaProdotto()" autocomplete="off">
+    </div>
+</div>
+
+<div class="table-wrap">
+    <table id="tabella_prodotti">
+        <thead>
+            <tr>
+                <th>Nome prodotto</th>
+                <th style="width:160px;">Prezzo base</th>
+                <th style="width:80px;"></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in prodotti %}
+            <tr>
+                <td><strong>{{ p.nome }}</strong></td>
+                <td>
+                    <span style="font-size:15px; font-weight:600;">€ {{ "%.2f"|format(p.prezzo_base) }}</span>
+                    <span style="font-size:12px; color:#9ca3af;">/u.</span>
+                </td>
+                <td>
+                    <a href="/delete_prodotto/{{ p.id }}"
+                       onclick="return confirm('Eliminare {{ p.nome }}?')"
+                       class="action-link danger">Elimina</a>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="3" style="text-align:center; color:#9ca3af; padding:2rem;">Nessun prodotto.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<script>
+function cercaProdotto() {
+    const query = document.getElementById("search_prodotto").value.toLowerCase();
+    document.querySelectorAll("#tabella_prodotti tbody tr").forEach(function(r) {
+        r.style.display = r.textContent.toLowerCase().includes(query) ? "" : "none";
+    });
+}
+</script>
+
+{% endblock %}

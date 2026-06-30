@@ -1,0 +1,344 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="topbar">
+    <h1>Fattura {{ fattura.numero }}</h1>
+    <div class="flex gap-1">
+        {% if fattura.stato == "CHIUSA" %}
+        <a href="/pdf/{{ fattura.id }}" class="btn btn-primary">⬇ Scarica PDF</a>
+        {% endif %}
+        <a href="/fatture" class="btn">← Indietro</a>
+    </div>
+</div>
+
+<script id="prodotti_json" type="application/json">
+    [{% for p in prodotti %}{"id": {{ p.id }}, "nome": {{ p.nome | tojson }}, "prezzo_base": {{ p.prezzo_base }}}{% if not loop.last %},{% endif %}{% endfor %}]
+</script>
+
+<style>
+.autocomplete-wrapper { position:relative; width:200px; display:inline-block; }
+.autocomplete-wrapper input { width:100%; padding:5px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px; }
+.autocomplete-list { position:absolute; top:100%; left:0; right:0; border:1px solid #d0d5dd; border-top:none; background:white; z-index:999; max-height:180px; overflow-y:auto; border-radius:0 0 6px 6px; box-shadow:0 4px 12px rgba(0,0,0,0.08); display:none; }
+.autocomplete-list div { padding:8px 10px; cursor:pointer; font-size:12px; }
+.autocomplete-list div:hover { background:#f0f4ff; }
+.autocomplete-list .nuovo-prodotto { background:#fffbeb; color:#92400e; font-style:italic; border-top:1px solid #e8ecf0; }
+.autocomplete-list .nuovo-prodotto:hover { background:#fef3c7; }
+</style>
+
+<!-- INFO FATTURA -->
+<div class="card">
+    <div class="form-row">
+        <div>
+            <div style="font-size:12px; color:#6b7280; margin-bottom:3px;">Cliente</div>
+            <div style="font-weight:600;">{{ fattura.cliente_nome }}</div>
+            <div style="font-size:13px; color:#6b7280;">{{ fattura.indirizzo }}</div>
+        </div>
+        <div>
+            <div style="font-size:12px; color:#6b7280; margin-bottom:3px;">Data</div>
+            <div style="font-weight:500;">{{ fattura.data }}</div>
+        </div>
+        <div>
+            <div style="font-size:12px; color:#6b7280; margin-bottom:3px;">Tipo</div>
+            {% if fattura.tipo == "FORNITURA" %}
+            <span class="badge badge-fornitura">Fornitura</span>
+            {% else %}
+            <span class="badge badge-manuale">Manuale</span>
+            {% endif %}
+        </div>
+        <div>
+            <div style="font-size:12px; color:#6b7280; margin-bottom:3px;">Stato</div>
+            {% if fattura.stato == "CHIUSA" %}
+            <span class="badge badge-chiusa">Chiusa</span>
+            {% else %}
+            <span class="badge badge-bozza">Bozza</span>
+            {% endif %}
+        </div>
+        <div>
+            <div style="font-size:12px; color:#6b7280; margin-bottom:3px;">IVA</div>
+            <div style="font-weight:500;">{{ fattura.regime_iva }}%</div>
+        </div>
+    </div>
+</div>
+
+<!-- DDT (FORNITURA) -->
+{% if fattura.tipo == "FORNITURA" %}
+
+{% if fattura.stato == "BOZZA" %}
+<div class="card">
+    <h2 style="font-size:14px; font-weight:600; margin-bottom:0.75rem;">Aggiungi DDT</h2>
+    <form method="POST" action="/add_ddt">
+        <input type="hidden" name="fattura_id" value="{{ fattura.id }}">
+        <div class="form-row" style="align-items:flex-end;">
+            <div class="form-group">
+                <label>Numero DDT</label>
+                <input name="numero" placeholder="es. 15" required>
+            </div>
+            <div class="form-group">
+                <label>Data DDT</label>
+                <input type="date" name="data" required>
+            </div>
+            <div style="padding-bottom:1rem;">
+                <button type="submit" class="btn btn-primary">+ Aggiungi DDT</button>
+            </div>
+        </div>
+    </form>
+</div>
+{% endif %}
+
+{% for ddt in ddt_list %}
+<div class="ddt-block">
+    <h3>
+        <span>DDT n. {{ ddt.numero }} del {{ ddt.data }}</span>
+        {% if fattura.stato == "BOZZA" %}
+        <a href="/delete_ddt/{{ ddt.id }}/{{ fattura.id }}"
+           onclick="return confirm('Eliminare DDT {{ ddt.numero }}?')"
+           class="action-link danger btn-sm">Elimina DDT</a>
+        {% endif %}
+    </h3>
+
+    <table style="margin-bottom:0.75rem;">
+        <thead>
+            <tr>
+                <th>Prodotto</th>
+                <th>Q.tà</th>
+                <th>U.M.</th>
+                <th>Prezzo/u.</th>
+                <th>Totale</th>
+                {% if fattura.stato == "BOZZA" %}<th></th>{% endif %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in righe_ddt %}
+            {% if r.ddt_id == ddt.id %}
+            <tr>
+                <td>{{ r.descrizione }}</td>
+                <td>{{ r.quantita }}</td>
+                <td>{{ r.unita_misura }}</td>
+                <td>€ {{ "%.2f"|format(r.prezzo) }}</td>
+                <td>€ {{ "%.2f"|format(r.totale) }}</td>
+                {% if fattura.stato == "BOZZA" %}
+                <td>
+                    <a href="/delete_riga_ddt/{{ r.id }}/{{ fattura.id }}"
+                       onclick="return confirm('Eliminare riga?')"
+                       class="action-link danger">Elimina</a>
+                </td>
+                {% endif %}
+            </tr>
+            {% endif %}
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% if fattura.stato == "BOZZA" %}
+    <form method="POST" action="/add_riga_prodotto">
+        <input type="hidden" name="fattura_id" value="{{ fattura.id }}">
+        <input type="hidden" name="ddt_id" value="{{ ddt.id }}">
+        <input type="hidden" name="prodotto_id" id="prodotto_id_{{ ddt.id }}">
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <div class="autocomplete-wrapper">
+                <input type="text" id="prodotto_search_{{ ddt.id }}" placeholder="Cerca prodotto..." autocomplete="off">
+                <div class="autocomplete-list" id="prodotto_list_{{ ddt.id }}"></div>
+            </div>
+            <input type="number" name="quantita" step="0.01" placeholder="Q.tà" required style="width:70px; padding:5px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px;">
+            <select name="unita_misura" style="padding:5px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px;">
+                <option value="mq">mq</option>
+                <option value="pz">pz</option>
+                <option value="gg">gg</option>
+                <option value="ml">ml</option>
+                <option value="qli">qli</option>
+            </select>
+            <input type="number" name="prezzo_override" id="prodotto_prezzo_{{ ddt.id }}" step="0.01" placeholder="Prezzo/u." style="width:90px; padding:5px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px;">
+            <button type="submit" class="btn btn-primary btn-sm"
+                    onclick="return document.getElementById('prodotto_id_{{ ddt.id }}').value !== '' || (alert('Seleziona un prodotto dalla lista.'), false)">
+                + Aggiungi
+            </button>
+        </div>
+    </form>
+    <script>setupProdottoAutocomplete( ddt.id );</script>
+    {% endif %}
+</div>
+{% endfor %}
+
+{% endif %}
+
+<!-- RIGHE MANUALI -->
+{% if fattura.tipo != "FORNITURA" %}
+
+{% if fattura.stato == "BOZZA" %}
+<div class="card">
+    <h2 style="font-size:14px; font-weight:600; margin-bottom:0.75rem;">Aggiungi riga</h2>
+    <form method="POST" action="/add_riga">
+        <input type="hidden" name="fattura_id" value="{{ fattura.id }}">
+        <div style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
+            <div class="form-group" style="flex:2; min-width:180px;">
+                <label>Descrizione</label>
+                <input name="descrizione" placeholder="es. Posa cubetti 6x8" required>
+            </div>
+            <div class="form-group" style="width:80px;">
+                <label>Q.tà</label>
+                <input type="number" step="0.01" name="quantita" placeholder="0" required>
+            </div>
+            <div class="form-group" style="width:80px;">
+                <label>U.M.</label>
+                <select name="unita_misura">
+                    <option value="mq">mq</option>
+                    <option value="pz">pz</option>
+                    <option value="gg">gg</option>
+                    <option value="ml">ml</option>
+                    <option value="qli">qli</option>
+                </select>
+            </div>
+            <div class="form-group" style="width:100px;">
+                <label>Prezzo/u.</label>
+                <input type="number" step="0.01" name="prezzo" placeholder="0.00" required>
+            </div>
+            <div style="padding-bottom:1rem;">
+                <button type="submit" class="btn btn-primary">+ Aggiungi</button>
+            </div>
+        </div>
+    </form>
+</div>
+{% endif %}
+
+<div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>Descrizione</th>
+                <th>Q.tà</th>
+                <th>U.M.</th>
+                <th>Prezzo/u.</th>
+                <th>Totale riga</th>
+                {% if fattura.stato == "BOZZA" %}<th></th>{% endif %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in righe %}
+            <tr>
+                <td>{{ r.descrizione }}</td>
+                <td>{{ r.quantita }}</td>
+                <td>{{ r.unita_misura }}</td>
+                <td>€ {{ "%.2f"|format(r.prezzo) }}</td>
+                <td>€ {{ "%.2f"|format(r.totale) }}</td>
+                {% if fattura.stato == "BOZZA" %}
+                <td>
+                    <a href="/delete_riga_fattura/{{ r.id }}/{{ fattura.id }}"
+                       onclick="return confirm('Eliminare riga?')"
+                       class="action-link danger">Elimina</a>
+                </td>
+                {% endif %}
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="6" style="text-align:center; color:#9ca3af; padding:1.5rem;">
+                    Nessuna riga aggiunta.
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% endif %}
+
+<!-- RIEPILOGO -->
+<div class="card mt-2">
+    <div class="totali">
+        <p>Totale imponibile: <strong>€ {{ "%.2f"|format(imponibile) }}</strong></p>
+        {% if fattura.regime_iva == "22" %}
+        <p>IVA 22%: <strong>€ {{ "%.2f"|format(iva) }}</strong></p>
+        {% endif %}
+        <p class="totale-finale">Totale fattura: € {{ "%.2f"|format(totale) }}</p>
+    </div>
+    {% if nota_iva %}
+    <div class="nota-rc mt-1">{{ nota_iva }}</div>
+    {% endif %}
+</div>
+
+<!-- AZIONI -->
+<div class="flex gap-1 mt-2">
+    {% if fattura.stato == "BOZZA" %}
+    <a href="/chiudi_fattura/{{ fattura.id }}" class="btn btn-primary">✅ Chiudi fattura</a>
+    {% endif %}
+    <a href="/delete_fattura/{{ fattura.id }}"
+       onclick="return confirm('Eliminare fattura {{ fattura.numero }}?')"
+       class="btn btn-danger">🗑 Elimina fattura</a>
+</div>
+
+<script>
+function setupProdottoAutocomplete(ddt_id) {
+    const input = document.getElementById("prodotto_search_" + ddt_id);
+    const hiddenId = document.getElementById("prodotto_id_" + ddt_id);
+    const hiddenPrezzo = document.getElementById("prodotto_prezzo_" + ddt_id);
+    const list = document.getElementById("prodotto_list_" + ddt_id);
+    const prodotti = JSON.parse(document.getElementById("prodotti_json").textContent);
+
+    input.addEventListener("input", function() {
+        const query = this.value.toLowerCase().trim();
+        list.innerHTML = "";
+        hiddenId.value = "";
+        hiddenPrezzo.value = "";
+        if (query.length === 0) { list.style.display = "none"; return; }
+
+        const filtrati = prodotti.filter(p => p.nome.toLowerCase().includes(query));
+        filtrati.forEach(function(p) {
+            const div = document.createElement("div");
+            div.textContent = p.nome + " — €" + p.prezzo_base.toFixed(2);
+            div.addEventListener("click", function() {
+                input.value = p.nome;
+                hiddenId.value = p.id;
+                hiddenPrezzo.value = p.prezzo_base;
+                list.style.display = "none";
+            });
+            list.appendChild(div);
+        });
+
+        const esatto = prodotti.find(p => p.nome.toLowerCase() === query);
+        if (!esatto && query.length > 1) {
+            const divNuovo = document.createElement("div");
+            divNuovo.className = "nuovo-prodotto";
+            divNuovo.textContent = '+ Salva "' + input.value + '" come nuovo prodotto';
+            divNuovo.addEventListener("click", function() {
+                salvaNuovoProdotto(input.value, ddt_id);
+                list.style.display = "none";
+            });
+            list.appendChild(divNuovo);
+        }
+
+        list.style.display = filtrati.length > 0 || query.length > 1 ? "block" : "none";
+    });
+
+    document.addEventListener("click", function(e) {
+        if (!input.contains(e.target) && !list.contains(e.target)) list.style.display = "none";
+    });
+}
+
+function salvaNuovoProdotto(nome, ddt_id) {
+    const prezzo = prompt('Prezzo unitario per "' + nome + '" (es. 35.00):');
+    if (prezzo === null || prezzo.trim() === "") return;
+    const prezzoNum = parseFloat(prezzo.replace(",", "."));
+    if (isNaN(prezzoNum)) { alert("Prezzo non valido."); return; }
+
+    fetch("/add_prodotto_ajax", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nome: nome, prezzo_base: prezzoNum })
+    })
+    .then(r => r.json())
+    .then(function(data) {
+        if (data.success) {
+            document.getElementById("prodotto_search_" + ddt_id).value = nome;
+            document.getElementById("prodotto_id_" + ddt_id).value = data.id;
+            document.getElementById("prodotto_prezzo_" + ddt_id).value = prezzoNum;
+            const json = JSON.parse(document.getElementById("prodotti_json").textContent);
+            json.push({ id: data.id, nome: nome, prezzo_base: prezzoNum });
+            document.getElementById("prodotti_json").textContent = JSON.stringify(json);
+            alert('"' + nome + '" salvato nel catalogo.');
+        } else {
+            alert("Errore nel salvataggio.");
+        }
+    });
+}
+</script>
+
+{% endblock %}

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="topbar">
+    <h1>Fatture</h1>
+    <a href="/nuova_fattura" class="btn btn-primary">+ Nuova fattura</a>
+</div>
+
+<div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>Numero</th>
+                <th>Data</th>
+                <th>Cliente</th>
+                <th>Tipo</th>
+                <th>Totale</th>
+                <th>Stato</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for f in fatture %}
+            <tr>
+                <td><strong>{{ f.numero }}</strong></td>
+                <td>{{ f.data }}</td>
+                <td>{{ f.cliente_nome }}</td>
+                <td>
+                    {% if f.tipo == "FORNITURA" %}
+                    <span class="badge badge-fornitura">Fornitura</span>
+                    {% else %}
+                    <span class="badge badge-manuale">Manuale</span>
+                    {% endif %}
+                </td>
+                <td><strong>€ {{ "%.2f"|format(f.totale_complessivo if f.totale_complessivo else 0) }}</strong></td>
+                <td>
+                    {% if f.stato == "PAGATA" %}
+                    <span class="badge badge-pagata">Pagata</span>
+                    {% elif f.stato == "CHIUSA" %}
+                    <span class="badge badge-chiusa">Chiusa</span>
+                    {% else %}
+                    <span class="badge badge-bozza">Bozza</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <a href="/fattura/{{ f.id }}" class="action-link">Apri</a>
+                    &nbsp;·&nbsp;
+                    <a href="/delete_fattura/{{ f.id }}"
+                       onclick="return confirm('Eliminare fattura {{ f.numero }}?')"
+                       class="action-link danger">Elimina</a>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="7" style="text-align:center; color:#9ca3af; padding:2rem;">
+                    Nessuna fattura. <a href="/nuova_fattura" class="action-link">Crea la prima</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% endblock %}

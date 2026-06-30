@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="topbar">
+    <h1>Nuova fattura</h1>
+    <a href="/fatture" class="btn">← Torna alle fatture</a>
+</div>
+
+<script id="clienti_json" type="application/json">
+    [{% for c in clienti %}{"id": {{ c.id }}, "nome": {{ c.nome | tojson }}}{% if not loop.last %},{% endif %}{% endfor %}]
+</script>
+
+<div class="card">
+    <form method="POST" action="/add_fattura" onsubmit="return validateForm()">
+
+        <div class="form-row">
+            <div class="form-group">
+                <label>Numero fattura *</label>
+                <input type="text" name="numero" placeholder="es. 2026/038" required>
+            </div>
+            <div class="form-group">
+                <label>Data *</label>
+                <input type="date" name="data" required>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Cliente *</label>
+            <div class="autocomplete-wrapper">
+                <input type="text"
+                       id="cliente_search"
+                       placeholder="Scrivi per cercare cliente..."
+                       autocomplete="off">
+                <div class="autocomplete-list" id="cliente_list"></div>
+            </div>
+            <input type="hidden" name="cliente_id" id="cliente_id">
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label>Tipo fattura *</label>
+                <select name="tipo" id="tipo" onchange="toggleIva()">
+                    <option value="FORNITURA">Fornitura (da DDT)</option>
+                    <option value="MANUALE">Manuale</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Regime IVA *</label>
+                <select name="regime_iva" id="regime_iva">
+                    <option value="22">IVA 22%</option>
+                    <option value="RC">Reverse Charge (0%)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Banca di accredito *</label>
+                <select name="iban" required>
+                    <option value="BPER Banca di Luserna San Giovanni - IBAN IT35S0538730600000004332185">
+                        BPER Banca di Luserna San Giovanni
+                    </option>
+                    <option value="Poste Italiane - IBAN IT04B0760110200001078221247">
+                        Poste Italiane
+                    </option>
+                </select>
+            </div>
+        </div>
+
+        <div style="margin-top:0.5rem;">
+            <button type="submit" class="btn btn-primary">Crea fattura →</button>
+        </div>
+
+    </form>
+</div>
+
+<script>
+function toggleIva() {
+    const tipo = document.getElementById("tipo").value;
+    const ivaSelect = document.getElementById("regime_iva");
+    if (tipo === "FORNITURA") {
+        ivaSelect.value = "22";
+        ivaSelect.disabled = true;
+    } else {
+        ivaSelect.disabled = false;
+    }
+}
+
+window.onload = function() {
+    toggleIva();
+    setupAutocomplete();
+}
+
+function setupAutocomplete() {
+    const input = document.getElementById("cliente_search");
+    const hiddenInput = document.getElementById("cliente_id");
+    const list = document.getElementById("cliente_list");
+    const clienti = JSON.parse(document.getElementById("clienti_json").textContent);
+
+    input.addEventListener("input", function() {
+        const query = this.value.toLowerCase().trim();
+        list.innerHTML = "";
+        hiddenInput.value = "";
+        if (query.length === 0) { list.style.display = "none"; return; }
+        const filtrati = clienti.filter(c => c.nome.toLowerCase().includes(query));
+        if (filtrati.length === 0) { list.style.display = "none"; return; }
+        filtrati.forEach(function(c) {
+            const div = document.createElement("div");
+            div.textContent = c.nome;
+            div.addEventListener("click", function() {
+                input.value = c.nome;
+                hiddenInput.value = c.id;
+                list.style.display = "none";
+            });
+            list.appendChild(div);
+        });
+        list.style.display = "block";
+    });
+
+    document.addEventListener("click", function(e) {
+        if (!input.contains(e.target) && !list.contains(e.target)) {
+            list.style.display = "none";
+        }
+    });
+}
+
+function validateForm() {
+    if (!document.getElementById("cliente_id").value) {
+        alert("Seleziona un cliente dalla lista.");
+        return false;
+    }
+    return true;
+}
+</script>
+
+{% endblock %}

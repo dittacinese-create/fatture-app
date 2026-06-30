@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestione Fatture</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div class="sidebar">
+    <div class="sidebar-logo">
+        <span>🧾</span> Fatture
+    </div>
+    <nav>
+        <a href="/fatture" class="{{ 'active' if request.path.startswith('/fattur') else '' }}">
+            <span class="icon">📄</span> Fatture
+        </a>
+        <a href="/clienti" class="{{ 'active' if request.path.startswith('/client') else '' }}">
+            <span class="icon">👥</span> Clienti
+        </a>
+        <a href="/prodotti" class="{{ 'active' if request.path == '/prodotti' else '' }}">
+            <span class="icon">📦</span> Prodotti
+        </a>
+    </nav>
+</div>
+
+<div class="main">
+    {% block content %}{% endblock %}
+</div>
+
+</body>
+</html>

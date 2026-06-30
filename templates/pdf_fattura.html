@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<style>
+    @page { margin: 1.8cm 2cm; }
+    body { font-family: Helvetica, Arial, sans-serif; font-size: 8.5pt; color: #1a1a1a; }
+
+    /* TITOLO */
+    table.titolo { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    table.titolo td.tit { font-size: 14pt; font-weight: bold; letter-spacing: 0.5px; }
+    table.titolo td.num { text-align: right; font-size: 9pt; color: #555; }
+
+    /* CEDENTE / CESSIONARIO */
+    table.parti { width: 100%; border-collapse: collapse; border-top: 1px solid #000; border-bottom: 1px solid #000; margin-bottom: 12px; }
+    table.parti td { width: 50%; vertical-align: top; padding: 8px 0; }
+    table.parti td.right { padding-left: 16px; }
+    .label-parte { font-size: 7.5pt; font-weight: bold; color: #1d4d3e; margin-bottom: 4px; letter-spacing: 0.3px; }
+    .info-parte { line-height: 1.5; }
+
+    /* DDT */
+    .ddt-bar { background: #1d4d3e; color: white; padding: 5px 10px; font-size: 8pt; font-weight: bold; letter-spacing: 0.3px; }
+
+    /* TABELLA RIGHE */
+    table.righe { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+    table.righe thead tr { border-bottom: 1px solid #000; }
+    table.righe thead td { padding: 5px 8px 4px; font-size: 7.5pt; font-weight: bold; }
+    table.righe thead td.right { text-align: right; }
+    table.righe tbody td { padding: 5px 8px; border-bottom: 1px solid #eee; }
+    table.righe tbody td.right { text-align: right; }
+
+    /* TOTALI */
+    table.totali { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+    table.totali td.spazio { width: 58%; }
+    table.totali td.box { width: 42%; text-align: right; }
+    .riga-totale { color: #555; padding: 2px 0; }
+    .totale-finale { font-size: 12pt; font-weight: bold; color: #1d4d3e; border-top: 1px solid #000; padding-top: 5px; margin-top: 4px; }
+
+    /* PAGAMENTO */
+    .pagamento { border-top: 1px solid #000; padding-top: 10px; font-size: 8pt; color: #444; }
+    .pagamento b { color: #1d4d3e; }
+
+    /* REVERSE CHARGE */
+    .rc-box { margin-top: 10px; font-size: 8pt; color: #444; }
+</style>
+</head>
+<body>
+
+<!-- TITOLO -->
+<table class="titolo">
+    <tr>
+        <td class="tit">FATTURA</td>
+        <td class="num">n. {{ fattura.numero }} del {{ fattura.data }}</td>
+    </tr>
+</table>
+
+<!-- CEDENTE / CESSIONARIO -->
+<table class="parti">
+    <tr>
+        <td>
+            <div class="label-parte">CEDENTE / PRESTATORE</div>
+            <div class="info-parte">
+                {{ azienda.ragione_sociale }}<br>
+                {{ azienda.indirizzo }}<br>
+                P.IVA {{ azienda.partita_iva }}<br>
+                C.F. {{ azienda.codice_fiscale }}
+            </div>
+        </td>
+        <td class="right">
+            <div class="label-parte">CESSIONARIO / COMMITTENTE</div>
+            <div class="info-parte">
+                {{ fattura.cliente_nome }}<br>
+                {{ fattura.cliente_indirizzo }}<br>
+                P.IVA e C.F. {{ fattura.cliente_piva }}
+                {% if fattura.cliente_sdi %}<br>SDI: {{ fattura.cliente_sdi }}{% endif %}
+                {% if fattura.cliente_pec %}<br>PEC: {{ fattura.cliente_pec }}{% endif %}
+            </div>
+        </td>
+    </tr>
+</table>
+
+<!-- RIGHE FORNITURA -->
+{% if fattura.tipo == "FORNITURA" %}
+    {% for ddt in ddt_list %}
+    <div class="ddt-bar">DDT N. {{ ddt.numero }} DEL {{ ddt.data }}</div>
+    <table class="righe">
+        <thead>
+            <tr>
+                <td style="width:48%">Descrizione</td>
+                <td style="width:10%">U.M.</td>
+                <td style="width:12%" class="right">Quantità</td>
+                <td style="width:15%" class="right">Prezzo/u.</td>
+                <td style="width:15%" class="right">Importo</td>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in righe_ddt %}{% if r.ddt_id == ddt.id %}
+            <tr>
+                <td>{{ r.descrizione }}</td>
+                <td>{{ r.unita_misura }}</td>
+                <td class="right">{{ r.quantita }}</td>
+                <td class="right">{{ "%.2f"|format(r.prezzo) }}&euro;</td>
+                <td class="right">{{ "%.2f"|format(r.totale) }}&euro;</td>
+            </tr>
+            {% endif %}{% endfor %}
+        </tbody>
+    </table>
+    {% endfor %}
+
+<!-- RIGHE MANUALI -->
+{% else %}
+    <table class="righe">
+        <thead>
+            <tr>
+                <td style="width:48%">Descrizione</td>
+                <td style="width:10%">U.M.</td>
+                <td style="width:12%" class="right">Quantità</td>
+                <td style="width:15%" class="right">Prezzo/u.</td>
+                <td style="width:15%" class="right">Importo</td>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in righe %}
+            <tr>
+                <td>{{ r.descrizione }}</td>
+                <td>{{ r.unita_misura }}</td>
+                <td class="right">{{ r.quantita }}</td>
+                <td class="right">{{ "%.2f"|format(r.prezzo) }}&euro;</td>
+                <td class="right">{{ "%.2f"|format(r.totale) }}&euro;</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+{% endif %}
+
+<!-- TOTALI -->
+<table class="totali">
+    <tr>
+        <td class="spazio"></td>
+        <td class="box">
+            <div class="riga-totale">Imponibile: {{ "%.2f"|format(imponibile) }}&euro;</div>
+            {% if fattura.regime_iva == "22" %}
+            <div class="riga-totale">IVA 22%: {{ "%.2f"|format(iva) }}&euro;</div>
+            {% endif %}
+            <div class="totale-finale">TOTALE {{ "%.2f"|format(totale) }}&euro;</div>
+        </td>
+    </tr>
+</table>
+
+{% if fattura.regime_iva != "22" %}
+<div class="rc-box">
+    Operazione soggetta a Reverse Charge – IVA assolta dal committente (art. 17 c. 6/A DPR 633/72)
+</div>
+{% endif %}
+
+<!-- PAGAMENTO -->
+<div class="pagamento">
+    <b>Dati di pagamento</b><br>
+    {{ fattura.iban }}
+</div>
+
+</body>
+</html>
