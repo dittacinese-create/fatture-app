@@ -83,6 +83,7 @@ def add_prodotto_ajax():
     data = request.get_json()
     nome = data.get("nome", "").strip()
     prezzo_base = data.get("prezzo_base", 0)
+    unita_misura = data.get("unita_misura", "mq")
 
     if not nome or prezzo_base <= 0:
         return jsonify({"success": False})
@@ -90,8 +91,8 @@ def add_prodotto_ajax():
     db = get_db()
     cur = db.cursor()
     cur.execute(
-        "INSERT INTO prodotti (nome, prezzo_base) VALUES (%s, %s) RETURNING id",
-        (nome, prezzo_base)
+        "INSERT INTO prodotti (nome, prezzo_base, unita_misura) VALUES (%s, %s, %s) RETURNING id",
+        (nome, prezzo_base, unita_misura)
     )
     nuovo_id = cur.fetchone()["id"]
     db.commit()
@@ -105,11 +106,12 @@ def add_prodotto():
     db = get_db()
     cur = db.cursor()
     cur.execute("""
-        INSERT INTO prodotti (nome, prezzo_base)
-        VALUES (%s, %s)
+        INSERT INTO prodotti (nome, prezzo_base, unita_misura)
+        VALUES (%s, %s, %s)
     """, (
         request.form["nome"],
-        float(request.form["prezzo_base"])
+        float(request.form["prezzo_base"]),
+        request.form.get("unita_misura", "mq")
     ))
     db.commit()
     cur.close()
@@ -445,18 +447,22 @@ def add_riga_prodotto():
     prodotto = cur.fetchone()
 
     quantita = float(request.form["quantita"])
-    totale = round(quantita * prodotto["prezzo_base"], 2)
+    # Prezzo: usa quello modificato dall'utente se presente, altrimenti il prezzo base
+    prezzo_override = request.form.get("prezzo_override")
+    prezzo = float(prezzo_override) if prezzo_override else prodotto["prezzo_base"]
+    totale = round(quantita * prezzo, 2)
 
     cur.execute("""
         INSERT INTO righe_ddt
-        (ddt_id, prodotto_id, descrizione, quantita, prezzo, totale)
-        VALUES (%s, %s, %s, %s, %s, %s)
+        (ddt_id, prodotto_id, descrizione, quantita, prezzo, unita_misura, totale)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
     """, (
         ddt_id,
         prodotto["id"],
         prodotto["nome"],
         quantita,
-        prodotto["prezzo_base"],
+        prezzo,
+        prodotto["unita_misura"],
         totale
     ))
 

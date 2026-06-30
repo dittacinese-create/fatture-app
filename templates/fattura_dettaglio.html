@@ -12,13 +12,13 @@
 </div>
 
 <script id="prodotti_json" type="application/json">
-    [{% for p in prodotti %}{"id": {{ p.id }}, "nome": {{ p.nome | tojson }}, "prezzo_base": {{ p.prezzo_base }}}{% if not loop.last %},{% endif %}{% endfor %}]
+    [{% for p in prodotti %}{"id": {{ p.id }}, "nome": {{ p.nome | tojson }}, "prezzo_base": {{ p.prezzo_base }}, "unita_misura": {{ p.unita_misura | tojson }}}{% if not loop.last %},{% endif %}{% endfor %}]
 </script>
 
 <style>
-.autocomplete-wrapper { position:relative; width:200px; display:inline-block; }
+.autocomplete-wrapper { position:relative; width:220px; display:inline-block; }
 .autocomplete-wrapper input { width:100%; padding:5px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px; }
-.autocomplete-list { position:absolute; top:100%; left:0; right:0; border:1px solid #d0d5dd; border-top:none; background:white; z-index:999; max-height:180px; overflow-y:auto; border-radius:0 0 6px 6px; box-shadow:0 4px 12px rgba(0,0,0,0.08); display:none; }
+.autocomplete-list { position:absolute; top:100%; left:0; right:0; border:1px solid #d0d5dd; border-top:none; background:white; z-index:999; max-height:200px; overflow-y:auto; border-radius:0 0 6px 6px; box-shadow:0 4px 12px rgba(0,0,0,0.08); display:none; }
 .autocomplete-list div { padding:8px 10px; cursor:pointer; font-size:12px; }
 .autocomplete-list div:hover { background:#f0f4ff; }
 .autocomplete-list .nuovo-prodotto { background:#fffbeb; color:#92400e; font-style:italic; border-top:1px solid #e8ecf0; }
@@ -139,14 +139,8 @@
                 <input type="text" id="prodotto_search_{{ ddt.id }}" placeholder="Cerca prodotto..." autocomplete="off">
                 <div class="autocomplete-list" id="prodotto_list_{{ ddt.id }}"></div>
             </div>
-            <input type="number" name="quantita" step="0.01" placeholder="Q.tà" required style="width:70px; padding:5px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px;">
-            <select name="unita_misura" style="padding:5px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px;">
-                <option value="mq">mq</option>
-                <option value="pz">pz</option>
-                <option value="gg">gg</option>
-                <option value="ml">ml</option>
-                <option value="qli">qli</option>
-            </select>
+            <input type="number" name="quantita" step="0.01" placeholder="Q.tà" required style="width:80px; padding:5px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px;">
+            <span id="prodotto_um_{{ ddt.id }}" style="font-size:13px; color:#6b7280; min-width:30px;"></span>
             <input type="number" name="prezzo_override" id="prodotto_prezzo_{{ ddt.id }}" step="0.01" placeholder="Prezzo/u." style="width:90px; padding:5px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px;">
             <button type="submit" class="btn btn-primary btn-sm"
                     onclick="return document.getElementById('prodotto_id_{{ ddt.id }}').value !== '' || (alert('Seleziona un prodotto dalla lista.'), false)">
@@ -266,10 +260,12 @@
 </div>
 
 <script>
+// Ricerca prodotti con autocomplete, mostra U.M. e suggerisce salvataggio nuovo prodotto
 function setupProdottoAutocomplete(ddt_id) {
     const input = document.getElementById("prodotto_search_" + ddt_id);
     const hiddenId = document.getElementById("prodotto_id_" + ddt_id);
     const hiddenPrezzo = document.getElementById("prodotto_prezzo_" + ddt_id);
+    const umSpan = document.getElementById("prodotto_um_" + ddt_id);
     const list = document.getElementById("prodotto_list_" + ddt_id);
     const prodotti = JSON.parse(document.getElementById("prodotti_json").textContent);
 
@@ -278,16 +274,20 @@ function setupProdottoAutocomplete(ddt_id) {
         list.innerHTML = "";
         hiddenId.value = "";
         hiddenPrezzo.value = "";
+        umSpan.textContent = "";
+
         if (query.length === 0) { list.style.display = "none"; return; }
 
         const filtrati = prodotti.filter(p => p.nome.toLowerCase().includes(query));
+
         filtrati.forEach(function(p) {
             const div = document.createElement("div");
-            div.textContent = p.nome + " — €" + p.prezzo_base.toFixed(2);
+            div.textContent = p.nome + " — €" + p.prezzo_base.toFixed(2) + " /" + p.unita_misura;
             div.addEventListener("click", function() {
                 input.value = p.nome;
                 hiddenId.value = p.id;
                 hiddenPrezzo.value = p.prezzo_base;
+                umSpan.textContent = p.unita_misura;
                 list.style.display = "none";
             });
             list.appendChild(div);
@@ -305,7 +305,7 @@ function setupProdottoAutocomplete(ddt_id) {
             list.appendChild(divNuovo);
         }
 
-        list.style.display = filtrati.length > 0 || query.length > 1 ? "block" : "none";
+        list.style.display = (filtrati.length > 0 || query.length > 1) ? "block" : "none";
     });
 
     document.addEventListener("click", function(e) {
@@ -313,16 +313,20 @@ function setupProdottoAutocomplete(ddt_id) {
     });
 }
 
+// Chiede prezzo e unità di misura, salva il nuovo prodotto via AJAX
 function salvaNuovoProdotto(nome, ddt_id) {
     const prezzo = prompt('Prezzo unitario per "' + nome + '" (es. 35.00):');
     if (prezzo === null || prezzo.trim() === "") return;
     const prezzoNum = parseFloat(prezzo.replace(",", "."));
     if (isNaN(prezzoNum)) { alert("Prezzo non valido."); return; }
 
+    const um = prompt('Unità di misura per "' + nome + '" (mq, pz, gg, ml, qli):', "mq");
+    if (um === null || um.trim() === "") return;
+
     fetch("/add_prodotto_ajax", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nome: nome, prezzo_base: prezzoNum })
+        body: JSON.stringify({ nome: nome, prezzo_base: prezzoNum, unita_misura: um.trim() })
     })
     .then(r => r.json())
     .then(function(data) {
@@ -330,9 +334,12 @@ function salvaNuovoProdotto(nome, ddt_id) {
             document.getElementById("prodotto_search_" + ddt_id).value = nome;
             document.getElementById("prodotto_id_" + ddt_id).value = data.id;
             document.getElementById("prodotto_prezzo_" + ddt_id).value = prezzoNum;
+            document.getElementById("prodotto_um_" + ddt_id).textContent = um.trim();
+
             const json = JSON.parse(document.getElementById("prodotti_json").textContent);
-            json.push({ id: data.id, nome: nome, prezzo_base: prezzoNum });
+            json.push({ id: data.id, nome: nome, prezzo_base: prezzoNum, unita_misura: um.trim() });
             document.getElementById("prodotti_json").textContent = JSON.stringify(json);
+
             alert('"' + nome + '" salvato nel catalogo.');
         } else {
             alert("Errore nel salvataggio.");

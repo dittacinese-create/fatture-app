@@ -45,7 +45,8 @@ def init_db():
         CREATE TABLE IF NOT EXISTS prodotti (
             id SERIAL PRIMARY KEY,
             nome TEXT NOT NULL,
-            prezzo_base REAL NOT NULL
+            prezzo_base REAL NOT NULL,
+            unita_misura TEXT DEFAULT 'mq'
         );
 
         CREATE TABLE IF NOT EXISTS fatture (
