@@ -25,6 +25,95 @@
 .autocomplete-list .nuovo-prodotto:hover { background:#fef3c7; }
 </style>
 
+<script>
+// Ricerca prodotti con autocomplete, mostra U.M. e suggerisce salvataggio nuovo prodotto
+function setupProdottoAutocomplete(ddt_id) {
+    const input = document.getElementById("prodotto_search_" + ddt_id);
+    const hiddenId = document.getElementById("prodotto_id_" + ddt_id);
+    const hiddenPrezzo = document.getElementById("prodotto_prezzo_" + ddt_id);
+    const umSpan = document.getElementById("prodotto_um_" + ddt_id);
+    const list = document.getElementById("prodotto_list_" + ddt_id);
+    const prodotti = JSON.parse(document.getElementById("prodotti_json").textContent);
+
+    input.addEventListener("input", function() {
+        const query = this.value.toLowerCase().trim();
+        list.innerHTML = "";
+        hiddenId.value = "";
+        hiddenPrezzo.value = "";
+        umSpan.textContent = "";
+
+        if (query.length === 0) { list.style.display = "none"; return; }
+
+        const filtrati = prodotti.filter(p => p.nome.toLowerCase().includes(query));
+
+        filtrati.forEach(function(p) {
+            const div = document.createElement("div");
+            div.textContent = p.nome + " — €" + p.prezzo_base.toFixed(2) + " /" + p.unita_misura;
+            div.addEventListener("click", function() {
+                input.value = p.nome;
+                hiddenId.value = p.id;
+                hiddenPrezzo.value = p.prezzo_base;
+                umSpan.textContent = p.unita_misura;
+                list.style.display = "none";
+            });
+            list.appendChild(div);
+        });
+
+        const esatto = prodotti.find(p => p.nome.toLowerCase() === query);
+        if (!esatto && query.length > 1) {
+            const divNuovo = document.createElement("div");
+            divNuovo.className = "nuovo-prodotto";
+            divNuovo.textContent = '+ Salva "' + input.value + '" come nuovo prodotto';
+            divNuovo.addEventListener("click", function() {
+                salvaNuovoProdotto(input.value, ddt_id);
+                list.style.display = "none";
+            });
+            list.appendChild(divNuovo);
+        }
+
+        list.style.display = (filtrati.length > 0 || query.length > 1) ? "block" : "none";
+    });
+
+    document.addEventListener("click", function(e) {
+        if (!input.contains(e.target) && !list.contains(e.target)) list.style.display = "none";
+    });
+}
+
+// Chiede prezzo e unità di misura, salva il nuovo prodotto via AJAX
+function salvaNuovoProdotto(nome, ddt_id) {
+    const prezzo = prompt('Prezzo unitario per "' + nome + '" (es. 35.00):');
+    if (prezzo === null || prezzo.trim() === "") return;
+    const prezzoNum = parseFloat(prezzo.replace(",", "."));
+    if (isNaN(prezzoNum)) { alert("Prezzo non valido."); return; }
+
+    const um = prompt('Unità di misura per "' + nome + '" (mq, pz, gg, ml, qli):', "mq");
+    if (um === null || um.trim() === "") return;
+
+    fetch("/add_prodotto_ajax", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nome: nome, prezzo_base: prezzoNum, unita_misura: um.trim() })
+    })
+    .then(r => r.json())
+    .then(function(data) {
+        if (data.success) {
+            document.getElementById("prodotto_search_" + ddt_id).value = nome;
+            document.getElementById("prodotto_id_" + ddt_id).value = data.id;
+            document.getElementById("prodotto_prezzo_" + ddt_id).value = prezzoNum;
+            document.getElementById("prodotto_um_" + ddt_id).textContent = um.trim();
+
+            const json = JSON.parse(document.getElementById("prodotti_json").textContent);
+            json.push({ id: data.id, nome: nome, prezzo_base: prezzoNum, unita_misura: um.trim() });
+            document.getElementById("prodotti_json").textContent = JSON.stringify(json);
+
+            alert('"' + nome + '" salvato nel catalogo.');
+        } else {
+            alert("Errore nel salvataggio.");
+        }
+    });
+}
+</script>
+
 <!-- INFO FATTURA -->
 <div class="card">
     <div class="form-row">
@@ -148,7 +237,7 @@
             </button>
         </div>
     </form>
-    <script>setupProdottoAutocomplete( ddt.id );</script>
+    <script>setupProdottoAutocomplete({{ ddt.id }});</script>
     {% endif %}
 </div>
 {% endfor %}
