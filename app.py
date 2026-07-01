@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, redirect, make_response, send_file, jsonify
-from database import init_db, get_db
+from database import init_db, get_db, return_db
 from config import AZIENDA
 import os
 
@@ -27,9 +27,8 @@ def clienti():
     cur.execute("SELECT * FROM clienti ORDER BY id DESC")
     clienti = cur.fetchall()
     cur.close()
-    db.close()
+    return_db(db)
     return render_template("clienti.html", clienti=clienti)
-
 
 @app.route("/add", methods=["POST"])
 def add():
@@ -48,9 +47,8 @@ def add():
     ))
     db.commit()
     cur.close()
-    db.close()
+    return_db(db)
     return redirect("/clienti")
-
 
 @app.route("/delete_cliente/<int:id>")
 def delete_cliente(id):
@@ -59,9 +57,8 @@ def delete_cliente(id):
     cur.execute("DELETE FROM clienti WHERE id = %s", (id,))
     db.commit()
     cur.close()
-    db.close()
+    return_db(db)
     return redirect("/clienti")
-
 
 # =========================
 # PRODOTTI
@@ -74,9 +71,8 @@ def prodotti():
     cur.execute("SELECT * FROM prodotti ORDER BY id DESC")
     prodotti = cur.fetchall()
     cur.close()
-    db.close()
+    return_db(db)
     return render_template("prodotti.html", prodotti=prodotti)
-
 
 @app.route("/add_prodotto_ajax", methods=["POST"])
 def add_prodotto_ajax():
@@ -84,10 +80,8 @@ def add_prodotto_ajax():
     nome = data.get("nome", "").strip()
     prezzo_base = data.get("prezzo_base", 0)
     unita_misura = data.get("unita_misura", "mq")
-
     if not nome or prezzo_base <= 0:
         return jsonify({"success": False})
-
     db = get_db()
     cur = db.cursor()
     cur.execute(
@@ -97,9 +91,8 @@ def add_prodotto_ajax():
     nuovo_id = cur.fetchone()["id"]
     db.commit()
     cur.close()
-    db.close()
+    return_db(db)
     return jsonify({"success": True, "id": nuovo_id})
-
 
 @app.route("/add_prodotto", methods=["POST"])
 def add_prodotto():
@@ -115,9 +108,8 @@ def add_prodotto():
     ))
     db.commit()
     cur.close()
-    db.close()
+    return_db(db)
     return redirect("/prodotti")
-
 
 @app.route("/delete_prodotto/<int:id>")
 def delete_prodotto(id):
@@ -126,12 +118,11 @@ def delete_prodotto(id):
     cur.execute("DELETE FROM prodotti WHERE id = %s", (id,))
     db.commit()
     cur.close()
-    db.close()
+    return_db(db)
     return redirect("/prodotti")
 
-
 # =========================
-# FATTURE LISTA
+# FATTURE
 # =========================
 
 @app.route("/fatture")
@@ -146,9 +137,8 @@ def fatture():
     """)
     fatture = cur.fetchall()
     cur.close()
-    db.close()
+    return_db(db)
     return render_template("fatture.html", fatture=fatture)
-
 
 @app.route("/nuova_fattura")
 def nuova_fattura():
@@ -157,25 +147,18 @@ def nuova_fattura():
     cur.execute("SELECT * FROM clienti ORDER BY nome")
     clienti = cur.fetchall()
     cur.close()
-    db.close()
+    return_db(db)
     return render_template("nuova_fattura.html", clienti=clienti)
-
-
-# =========================
-# CREA FATTURA
-# =========================
 
 @app.route("/add_fattura", methods=["POST"])
 def add_fattura():
     db = get_db()
     cur = db.cursor()
-
     iban = request.form.get("iban")
     if not iban:
         cur.close()
-        db.close()
+        return_db(db)
         return "IBAN mancante", 400
-
     cur.execute("""
         INSERT INTO fatture
         (numero, data, cliente_id, tipo, regime_iva, stato, iban)
@@ -189,14 +172,11 @@ def add_fattura():
         request.form.get("regime_iva", "22"),
         iban
     ))
-
     fattura_id = cur.fetchone()["id"]
     db.commit()
     cur.close()
-    db.close()
-
+    return_db(db)
     return redirect(f"/fattura/{fattura_id}")
-
 
 @app.route("/delete_fattura/<int:id>")
 def delete_fattura(id):
@@ -204,8 +184,7 @@ def delete_fattura(id):
     cur = db.cursor()
     cur.execute("DELETE FROM righe_fattura WHERE fattura_id=%s", (id,))
     cur.execute("""
-        DELETE FROM righe_ddt
-        WHERE ddt_id IN (
+        DELETE FROM righe_ddt WHERE ddt_id IN (
             SELECT id FROM ddt WHERE fattura_id=%s
         )
     """, (id,))
@@ -213,25 +192,21 @@ def delete_fattura(id):
     cur.execute("DELETE FROM fatture WHERE id=%s", (id,))
     db.commit()
     cur.close()
-    db.close()
+    return_db(db)
     return redirect("/fatture")
 
-
 # =========================
-# CHIUDI FATTURA
+# CHIUDI FATTURA — calcola e salva il totale
 # =========================
 
 @app.route("/chiudi_fattura/<int:id>")
 def chiudi_fattura(id):
     db = get_db()
     cur = db.cursor()
-
     cur.execute("SELECT * FROM fatture WHERE id=%s", (id,))
     fattura = cur.fetchone()
-
     cur.execute("SELECT * FROM righe_fattura WHERE fattura_id=%s", (id,))
     righe = cur.fetchall()
-
     cur.execute("""
         SELECT r.* FROM righe_ddt r
         JOIN ddt d ON d.id = r.ddt_id
@@ -252,14 +227,12 @@ def chiudi_fattura(id):
         totale = imponibile
 
     cur.execute("""
-        UPDATE fatture SET stato='CHIUSA', totale=%s
-        WHERE id=%s
+        UPDATE fatture SET stato='CHIUSA', totale=%s WHERE id=%s
     """, (totale, id))
     db.commit()
     cur.close()
-    db.close()
+    return_db(db)
     return redirect(f"/fattura/{id}")
-
 
 # =========================
 # DETTAGLIO FATTURA
@@ -269,7 +242,6 @@ def chiudi_fattura(id):
 def fattura_dettaglio(id):
     db = get_db()
     cur = db.cursor()
-
     cur.execute("""
         SELECT f.*, c.nome AS cliente_nome, c.indirizzo,
                c.partita_iva, c.codice_fiscale, c.codice_sdi, c.pec
@@ -278,40 +250,27 @@ def fattura_dettaglio(id):
         WHERE f.id = %s
     """, (id,))
     fattura = cur.fetchone()
-
-    cur.execute("""
-        SELECT * FROM righe_fattura WHERE fattura_id=%s
-        ORDER BY id ASC
-    """, (id,))
+    cur.execute("SELECT * FROM righe_fattura WHERE fattura_id=%s ORDER BY id ASC", (id,))
     righe = cur.fetchall()
-
     cur.execute("SELECT * FROM prodotti ORDER BY nome")
     prodotti = cur.fetchall()
-
-    cur.execute("""
-        SELECT * FROM ddt WHERE fattura_id=%s
-        ORDER BY id ASC
-    """, (id,))
+    cur.execute("SELECT * FROM ddt WHERE fattura_id=%s ORDER BY id ASC", (id,))
     ddt_list = cur.fetchall()
-
     cur.execute("""
-        SELECT r.*
-        FROM righe_ddt r
+        SELECT r.* FROM righe_ddt r
         JOIN ddt d ON d.id = r.ddt_id
         WHERE d.fattura_id = %s
     """, (id,))
     righe_ddt = cur.fetchall()
-
     cur.close()
-    db.close()
+    return_db(db)
 
     if fattura["tipo"] == "FORNITURA":
         imponibile = sum(r["totale"] for r in righe_ddt)
     else:
         imponibile = sum(r["totale"] for r in righe)
 
-    regime_iva = fattura["regime_iva"]
-    if regime_iva == "22":
+    if fattura["regime_iva"] == "22":
         iva = round(imponibile * 0.22, 2)
         totale = round(imponibile + iva, 2)
         nota_iva = None
@@ -322,20 +281,13 @@ def fattura_dettaglio(id):
 
     return render_template(
         "fattura_dettaglio.html",
-        fattura=fattura,
-        righe=righe,
-        prodotti=prodotti,
-        ddt_list=ddt_list,
-        righe_ddt=righe_ddt,
-        imponibile=imponibile,
-        iva=iva,
-        totale=totale,
-        nota_iva=nota_iva
+        fattura=fattura, righe=righe, prodotti=prodotti,
+        ddt_list=ddt_list, righe_ddt=righe_ddt,
+        imponibile=imponibile, iva=iva, totale=totale, nota_iva=nota_iva
     )
 
-
 # =========================
-# ADD RIGHE FATTURA
+# RIGHE FATTURA
 # =========================
 
 @app.route("/add_riga", methods=["POST"])
@@ -350,23 +302,11 @@ def add_riga():
         INSERT INTO righe_fattura
         (fattura_id, descrizione, quantita, unita_misura, prezzo, totale)
         VALUES (%s, %s, %s, %s, %s, %s)
-    """, (
-        fattura_id,
-        request.form["descrizione"],
-        q,
-        request.form["unita_misura"],
-        prezzo,
-        totale
-    ))
+    """, (fattura_id, request.form["descrizione"], q, request.form["unita_misura"], prezzo, totale))
     db.commit()
     cur.close()
-    db.close()
+    return_db(db)
     return redirect(f"/fattura/{fattura_id}")
-
-
-# =========================
-# DELETE RIGHE FATTURA
-# =========================
 
 @app.route("/delete_riga_fattura/<int:id>/<int:fattura_id>")
 def delete_riga_fattura(id, fattura_id):
@@ -375,13 +315,8 @@ def delete_riga_fattura(id, fattura_id):
     cur.execute("DELETE FROM righe_fattura WHERE id=%s", (id,))
     db.commit()
     cur.close()
-    db.close()
+    return_db(db)
     return redirect(f"/fattura/{fattura_id}")
-
-
-# =========================
-# DELETE RIGHE DDT
-# =========================
 
 @app.route("/delete_riga_ddt/<int:id>/<int:fattura_id>")
 def delete_riga_ddt(id, fattura_id):
@@ -390,9 +325,8 @@ def delete_riga_ddt(id, fattura_id):
     cur.execute("DELETE FROM righe_ddt WHERE id=%s", (id,))
     db.commit()
     cur.close()
-    db.close()
+    return_db(db)
     return redirect(f"/fattura/{fattura_id}")
-
 
 # =========================
 # DDT
@@ -403,18 +337,12 @@ def add_ddt():
     db = get_db()
     cur = db.cursor()
     cur.execute("""
-        INSERT INTO ddt (fattura_id, numero, data)
-        VALUES (%s, %s, %s)
-    """, (
-        request.form["fattura_id"],
-        request.form["numero"],
-        request.form["data"]
-    ))
+        INSERT INTO ddt (fattura_id, numero, data) VALUES (%s, %s, %s)
+    """, (request.form["fattura_id"], request.form["numero"], request.form["data"]))
     db.commit()
     cur.close()
-    db.close()
+    return_db(db)
     return redirect(f"/fattura/{request.form['fattura_id']}")
-
 
 @app.route("/delete_ddt/<int:ddt_id>/<int:fattura_id>")
 def delete_ddt(ddt_id, fattura_id):
@@ -424,54 +352,30 @@ def delete_ddt(ddt_id, fattura_id):
     cur.execute("DELETE FROM ddt WHERE id=%s", (ddt_id,))
     db.commit()
     cur.close()
-    db.close()
+    return_db(db)
     return redirect(f"/fattura/{fattura_id}")
-
-
-# =========================
-# RIGHE DDT
-# =========================
 
 @app.route("/add_riga_prodotto", methods=["POST"])
 def add_riga_prodotto():
     db = get_db()
     cur = db.cursor()
-
     fattura_id = request.form["fattura_id"]
     ddt_id = request.form["ddt_id"]
-
-    cur.execute(
-        "SELECT * FROM prodotti WHERE id=%s",
-        (request.form["prodotto_id"],)
-    )
+    cur.execute("SELECT * FROM prodotti WHERE id=%s", (request.form["prodotto_id"],))
     prodotto = cur.fetchone()
-
     quantita = float(request.form["quantita"])
-    # Prezzo: usa quello modificato dall'utente se presente, altrimenti il prezzo base
     prezzo_override = request.form.get("prezzo_override")
     prezzo = float(prezzo_override) if prezzo_override else prodotto["prezzo_base"]
     totale = round(quantita * prezzo, 2)
-
     cur.execute("""
         INSERT INTO righe_ddt
         (ddt_id, prodotto_id, descrizione, quantita, prezzo, unita_misura, totale)
         VALUES (%s, %s, %s, %s, %s, %s, %s)
-    """, (
-        ddt_id,
-        prodotto["id"],
-        prodotto["nome"],
-        quantita,
-        prezzo,
-        prodotto["unita_misura"],
-        totale
-    ))
-
+    """, (ddt_id, prodotto["id"], prodotto["nome"], quantita, prezzo, prodotto["unita_misura"], totale))
     db.commit()
     cur.close()
-    db.close()
-
+    return_db(db)
     return redirect(f"/fattura/{fattura_id}")
-
 
 # =========================
 # PDF
@@ -483,7 +387,6 @@ def pdf(id):
     import io
     db = get_db()
     cur = db.cursor()
-
     cur.execute("""
         SELECT f.*, c.nome AS cliente_nome, c.indirizzo AS cliente_indirizzo,
                c.partita_iva AS cliente_piva, c.codice_fiscale AS cliente_cf,
@@ -493,26 +396,21 @@ def pdf(id):
         WHERE f.id = %s
     """, (id,))
     fattura = cur.fetchone()
-
     cur.execute("SELECT * FROM righe_fattura WHERE fattura_id=%s", (id,))
     righe = cur.fetchall()
-
     cur.execute("SELECT * FROM ddt WHERE fattura_id=%s ORDER BY id", (id,))
     ddt_list = cur.fetchall()
-
     cur.execute("""
         SELECT r.* FROM righe_ddt r
         JOIN ddt d ON d.id = r.ddt_id
         WHERE d.fattura_id = %s
     """, (id,))
     righe_ddt = cur.fetchall()
-
     cur.close()
-    db.close()
+    return_db(db)
 
     righe_pdf = righe_ddt if fattura["tipo"] == "FORNITURA" else righe
     imponibile = round(sum(r["totale"] for r in righe_pdf), 2)
-
     if fattura["regime_iva"] == "22":
         iva = round(imponibile * 0.22, 2)
         totale = round(imponibile + iva, 2)
@@ -522,26 +420,18 @@ def pdf(id):
 
     html_content = render_template(
         "pdf_fattura.html",
-        fattura=fattura,
-        azienda=AZIENDA,
-        righe=righe,
-        ddt_list=ddt_list,
-        righe_ddt=righe_ddt,
-        imponibile=imponibile,
-        iva=iva,
-        totale=totale
+        fattura=fattura, azienda=AZIENDA,
+        righe=righe, ddt_list=ddt_list, righe_ddt=righe_ddt,
+        imponibile=imponibile, iva=iva, totale=totale
     )
-
     buffer = io.BytesIO()
     pisa.CreatePDF(html_content, dest=buffer)
     buffer.seek(0)
-
     numero_safe = fattura['numero'].replace('/', '_')
     response = make_response(buffer.read())
     response.headers["Content-Type"] = "application/pdf"
     response.headers["Content-Disposition"] = f"attachment; filename=fattura_{numero_safe}.pdf"
     return response
-
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5001))
