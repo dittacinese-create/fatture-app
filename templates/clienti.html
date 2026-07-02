@@ -6,7 +6,7 @@
 </div>
 
 <div class="card">
-    <h2 style="font-size:15px; font-weight:600; margin-bottom:1rem;">Nuovo cliente</h2>
+    <h2 style="font-size:15px; font-weight:600; margin-bottom:1rem; color:#1a1a2e;">Nuovo cliente</h2>
     <form method="POST" action="/add">
         <div class="form-row">
             <div class="form-group">
@@ -41,13 +41,19 @@
 </div>
 
 <div class="topbar" style="margin-top:1.5rem; margin-bottom:1rem;">
-    <h2 style="font-size:16px; font-weight:600;">
+    <h2 style="font-size:16px; font-weight:600; color:#1a1a2e;">
         Clienti salvati
-        <span style="font-size:13px; font-weight:400; color:#6b7280; margin-left:8px;">{{ clienti|length }} totali</span>
+        <span style="font-size:13px; font-weight:400; color:#6b7280; margin-left:8px;">
+            {{ clienti|length }} totali
+        </span>
     </h2>
     <div class="search-bar">
         <span class="search-icon">🔍</span>
-        <input type="text" id="search_cliente" placeholder="Cerca per nome, P.IVA, SDI..." oninput="cercaCliente()" autocomplete="off">
+        <input type="text"
+               id="search_cliente"
+               placeholder="Cerca per nome, P.IVA, SDI..."
+               oninput="cercaCliente()"
+               autocomplete="off">
     </div>
 </div>
 
@@ -71,7 +77,11 @@
                 <td style="color:#6b7280;">{{ c.indirizzo }}</td>
                 <td>{{ c.partita_iva }}</td>
                 <td>{{ c.codice_fiscale }}</td>
-                <td>{% if c.codice_sdi %}<span class="badge badge-fornitura">{{ c.codice_sdi }}</span>{% endif %}</td>
+                <td>
+                    {% if c.codice_sdi %}
+                    <span class="badge badge-fornitura">{{ c.codice_sdi }}</span>
+                    {% endif %}
+                </td>
                 <td style="color:#6b7280; font-size:12px;">{{ c.pec }}</td>
                 <td>
                     <a href="/delete_cliente/{{ c.id }}"
@@ -81,7 +91,9 @@
             </tr>
             {% else %}
             <tr>
-                <td colspan="7" style="text-align:center; color:#9ca3af; padding:2rem;">Nessun cliente.</td>
+                <td colspan="7" style="text-align:center; color:#9ca3af; padding:2rem;">
+                    Nessun cliente. Aggiungine uno sopra.
+                </td>
             </tr>
             {% endfor %}
         </tbody>
@@ -91,8 +103,8 @@
 <script>
 function cercaCliente() {
     const query = document.getElementById("search_cliente").value.toLowerCase();
-    document.querySelectorAll("#tabella_clienti tbody tr").forEach(function(r) {
-        r.style.display = r.textContent.toLowerCase().includes(query) ? "" : "none";
+    document.querySelectorAll("#tabella_clienti tbody tr").forEach(function(riga) {
+        riga.style.display = riga.textContent.toLowerCase().includes(query) ? "" : "none";
     });
 }
 </script>

@@ -17,8 +17,7 @@
                 <th>Totale</th>
                 <th>Scadenza</th>
                 <th>Note</th>
-                <th>Stato pagamento</th>
-                <th>Data pagamento</th>
+                <th>Pagamento</th>
                 <th>Azioni</th>
             </tr>
         </thead>
@@ -26,7 +25,7 @@
             {% for f in fatture %}
             <tr>
                 <td><strong>{{ f.numero }}</strong></td>
-                <td>{{ f.data }}</td>
+                <td>{{ f.data | replace("-", "/") if f.data else "—" }}</td>
                 <td>{{ f.cliente_nome }}</td>
                 <td>
                     {% if f.tipo == "FORNITURA" %}
@@ -36,8 +35,12 @@
                     {% endif %}
                 </td>
                 <td><strong>€ {{ "%.2f"|format(f.totale if f.totale else 0) }}</strong></td>
-                <td>{{ f.data_scadenza or "—" }}</td>
-                <td style="max-width:150px; color:#6b7280; font-size:12px;">{{ f.note or "—" }}</td>
+                <td style="color:#6b7280; font-size:13px;">
+                    {{ f.data_scadenza | replace("-", "/") if f.data_scadenza else "—" }}
+                </td>
+                <td style="max-width:140px; color:#6b7280; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                    {{ f.note or "—" }}
+                </td>
                 <td>
                     {% if f.stato_pagamento == "Pagata" %}
                     <span class="badge badge-pagata">Pagata</span>
@@ -47,7 +50,6 @@
                     <span class="badge badge-non-pagata">Non pagata</span>
                     {% endif %}
                 </td>
-                <td>{{ f.data_pagamento or "—" }}</td>
                 <td style="white-space:nowrap;">
                     <a href="/fattura/{{ f.id }}" class="action-link">Apri</a>
                     {% if f.stato == "CHIUSA" %}
@@ -62,7 +64,7 @@
             </tr>
             {% else %}
             <tr>
-                <td colspan="10" style="text-align:center; color:#9ca3af; padding:2rem;">
+                <td colspan="9" style="text-align:center; color:#9ca3af; padding:2rem;">
                     Nessuna fattura. <a href="/nuova_fattura" class="action-link">Crea la prima</a>
                 </td>
             </tr>
