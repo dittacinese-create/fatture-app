@@ -116,7 +116,7 @@ function salvaNuovoProdotto(nome, ddt_id) {
 
 <!-- INFO FATTURA -->
 <div class="card">
-    <div class="form-row">
+    <div class="form-row" style="flex-wrap:wrap; gap:1.5rem;">
         <div>
             <div style="font-size:12px; color:#6b7280; margin-bottom:3px;">Cliente</div>
             <div style="font-weight:600;">{{ fattura.cliente_nome }}</div>
@@ -135,7 +135,7 @@ function salvaNuovoProdotto(nome, ddt_id) {
             {% endif %}
         </div>
         <div>
-            <div style="font-size:12px; color:#6b7280; margin-bottom:3px;">Stato</div>
+            <div style="font-size:12px; color:#6b7280; margin-bottom:3px;">Stato fattura</div>
             {% if fattura.stato == "CHIUSA" %}
             <span class="badge badge-chiusa">Chiusa</span>
             {% else %}
@@ -147,6 +147,35 @@ function salvaNuovoProdotto(nome, ddt_id) {
             <div style="font-weight:500;">{{ fattura.regime_iva }}%</div>
         </div>
     </div>
+
+    <!-- CAMPI PAGAMENTO, SCADENZA, NOTE -->
+    <form method="POST" action="/aggiorna_fattura/{{ fattura.id }}" style="margin-top:1.2rem; border-top:1px solid #e8ecf0; padding-top:1.2rem;">
+        <div class="form-row" style="flex-wrap:wrap;">
+            <div class="form-group" style="min-width:160px;">
+                <label>Stato pagamento</label>
+                <select name="stato_pagamento">
+                    <option value="Non pagata" {% if fattura.stato_pagamento == "Non pagata" or not fattura.stato_pagamento %}selected{% endif %}>Non pagata</option>
+                    <option value="In attesa" {% if fattura.stato_pagamento == "In attesa" %}selected{% endif %}>In attesa</option>
+                    <option value="Pagata" {% if fattura.stato_pagamento == "Pagata" %}selected{% endif %}>Pagata</option>
+                </select>
+            </div>
+            <div class="form-group" style="min-width:160px;">
+                <label>Scadenza pagamento</label>
+                <input type="date" name="data_scadenza" value="{{ fattura.data_scadenza or '' }}">
+            </div>
+            <div class="form-group" style="min-width:160px;">
+                <label>Data pagamento</label>
+                <input type="date" name="data_pagamento" value="{{ fattura.data_pagamento or '' }}">
+            </div>
+            <div class="form-group" style="flex:2; min-width:200px;">
+                <label>Note / Cantiere</label>
+                <input type="text" name="note" value="{{ fattura.note or '' }}" placeholder="es. Cantiere di Torino">
+            </div>
+            <div style="display:flex; align-items:flex-end; padding-bottom:1rem;">
+                <button type="submit" class="btn btn-primary">Salva</button>
+            </div>
+        </div>
+    </form>
 </div>
 
 <!-- DDT (FORNITURA) -->

@@ -61,7 +61,11 @@ def init_db():
             regime_iva TEXT DEFAULT '22',
             stato TEXT DEFAULT 'BOZZA',
             iban TEXT,
-            totale REAL DEFAULT 0
+            totale REAL DEFAULT 0,
+            stato_pagamento TEXT DEFAULT 'Non pagata',
+            data_scadenza TEXT,
+            data_pagamento TEXT,
+            note TEXT
         );
         CREATE TABLE IF NOT EXISTS righe_fattura (
             id SERIAL PRIMARY KEY,
