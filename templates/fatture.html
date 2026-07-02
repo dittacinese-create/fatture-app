@@ -32,7 +32,7 @@
                     <span class="badge badge-manuale">Manuale</span>
                     {% endif %}
                 </td>
-                <td><strong>€ {{ "%.2f"|format(f.totale_complessivo if f.totale_complessivo else 0) }}</strong></td>
+                <td><strong>€ {{ "%.2f"|format(f.totale if f.totale else 0) }}</strong></td>
                 <td>
                     {% if f.stato == "PAGATA" %}
                     <span class="badge badge-pagata">Pagata</span>
