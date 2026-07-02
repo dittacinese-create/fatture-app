@@ -171,8 +171,9 @@ function salvaNuovoProdotto(nome, ddt_id) {
             <label>Note / Cantiere</label>
             <input type="text" id="note" value="{{ fattura.note or '' }}" placeholder="es. Cantiere di Torino" onblur="salvaFattura()">
         </div>
-        <div style="padding-bottom:1rem; min-width:80px;">
-            <span id="salva_status" style="font-size:12px; color:#059669; display:none;">✓ Salvato</span>
+        <div style="padding-bottom:1rem; min-width:120px; display:flex; align-items:center; gap:0.75rem;">
+            <button onclick="salvaFattura()" class="btn btn-primary btn-sm" type="button">Salva</button>
+            <span id="salva_status" style="font-size:13px; color:#059669; font-weight:600; display:none;">✓ Salvato</span>
         </div>
     </div>
 </div>
