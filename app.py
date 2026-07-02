@@ -178,6 +178,31 @@ def add_fattura():
     return_db(db)
     return redirect(f"/fattura/{fattura_id}")
 
+@app.route("/aggiorna_fattura_ajax/<int:id>", methods=["POST"])
+def aggiorna_fattura_ajax(id):
+    data = request.get_json()
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("""
+        UPDATE fatture SET
+            stato_pagamento = %s,
+            data_scadenza = %s,
+            data_pagamento = %s,
+            note = %s
+        WHERE id = %s
+    """, (
+        data.get("stato_pagamento", "Non pagata"),
+        data.get("data_scadenza") or None,
+        data.get("data_pagamento") or None,
+        data.get("note") or None,
+        id
+    ))
+    db.commit()
+    cur.close()
+    return_db(db)
+    return jsonify({"success": True})
+
+
 @app.route("/aggiorna_fattura/<int:id>", methods=["POST"])
 def aggiorna_fattura(id):
     db = get_db()
