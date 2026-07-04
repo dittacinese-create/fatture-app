@@ -4,3 +4,6 @@ AZIENDA = {
     "partita_iva": "04136510049",
     "codice_fiscale": "SHIMYE66H54Z210G"
 }
+
+# Cambia questa password con quella che vuoi usare
+PASSWORD_ACCESSO = "hu123"
