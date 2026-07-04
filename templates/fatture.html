@@ -7,7 +7,7 @@
 </div>
 
 <!-- FILTRI -->
-<div style="display:flex; gap:1rem; margin-bottom:1.25rem; flex-wrap:wrap;">
+<div style="display:flex; gap:1rem; margin-bottom:1.25rem; flex-wrap:wrap; align-items:center;">
     <div class="search-bar" style="margin-bottom:0;">
         <span class="search-icon">🔍</span>
         <input type="text"
@@ -49,11 +49,13 @@
         </thead>
         <tbody>
             {% for f in fatture %}
+            {% set data_fmt = f.data[8:10] + '/' + f.data[5:7] + '/' + f.data[0:4] if f.data else '—' %}
+            {% set scad_fmt = f.data_scadenza[8:10] + '/' + f.data_scadenza[5:7] + '/' + f.data_scadenza[0:4] if f.data_scadenza else '—' %}
             <tr data-cliente="{{ f.cliente_nome|lower }}"
                 data-stato="{{ f.stato_pagamento or 'Non pagata' }}"
                 data-tipo="{{ f.tipo }}">
                 <td><strong>{{ f.numero }}</strong></td>
-                <td>{{ f.data | replace("-", "/") if f.data else "—" }}</td>
+                <td>{{ data_fmt }}</td>
                 <td>{{ f.cliente_nome }}</td>
                 <td>
                     {% if f.tipo == "FORNITURA" %}
@@ -63,9 +65,7 @@
                     {% endif %}
                 </td>
                 <td><strong>€ {{ "%.2f"|format(f.totale if f.totale else 0) }}</strong></td>
-                <td style="color:#6b7280; font-size:13px;">
-                    {{ f.data_scadenza | replace("-", "/") if f.data_scadenza else "—" }}
-                </td>
+                <td style="color:#6b7280; font-size:13px;">{{ scad_fmt }}</td>
                 <td style="max-width:140px; color:#6b7280; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                     {{ f.note or "—" }}
                 </td>
@@ -99,7 +99,6 @@
             {% endfor %}
         </tbody>
     </table>
-
     <div id="nessun_risultato" style="display:none; text-align:center; color:#9ca3af; padding:2rem;">
         Nessuna fattura corrisponde ai filtri.
     </div>
@@ -107,17 +106,15 @@
 
 <script>
 function filtraFatture() {
-    const cliente = document.getElementById("filtro_cliente").value.toLowerCase().trim();
-    const stato = document.getElementById("filtro_stato").value;
-    const tipo = document.getElementById("filtro_tipo").value;
-    const righe = document.querySelectorAll("#tabella_fatture tbody tr");
-    let visibili = 0;
-
+    var cliente = document.getElementById("filtro_cliente").value.toLowerCase().trim();
+    var stato = document.getElementById("filtro_stato").value;
+    var tipo = document.getElementById("filtro_tipo").value;
+    var righe = document.querySelectorAll("#tabella_fatture tbody tr");
+    var visibili = 0;
     righe.forEach(function(riga) {
-        const matchCliente = !cliente || riga.dataset.cliente.includes(cliente);
-        const matchStato = !stato || riga.dataset.stato === stato;
-        const matchTipo = !tipo || riga.dataset.tipo === tipo;
-
+        var matchCliente = !cliente || (riga.dataset.cliente && riga.dataset.cliente.includes(cliente));
+        var matchStato = !stato || riga.dataset.stato === stato;
+        var matchTipo = !tipo || riga.dataset.tipo === tipo;
         if (matchCliente && matchStato && matchTipo) {
             riga.style.display = "";
             visibili++;
@@ -125,7 +122,6 @@ function filtraFatture() {
             riga.style.display = "none";
         }
     });
-
     document.getElementById("nessun_risultato").style.display = visibili === 0 ? "block" : "none";
 }
 
@@ -136,72 +132,5 @@ function resetFiltri() {
     filtraFatture();
 }
 </script>
-
-
-    <table>
-        <thead>
-            <tr>
-                <th>Numero</th>
-                <th>Data</th>
-                <th>Cliente</th>
-                <th>Tipo</th>
-                <th>Totale</th>
-                <th>Scadenza</th>
-                <th>Note</th>
-                <th>Pagamento</th>
-                <th>Azioni</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for f in fatture %}
-            <tr>
-                <td><strong>{{ f.numero }}</strong></td>
-                <td>{{ f.data | replace("-", "/") if f.data else "—" }}</td>
-                <td>{{ f.cliente_nome }}</td>
-                <td>
-                    {% if f.tipo == "FORNITURA" %}
-                    <span class="badge badge-fornitura">Fornitura</span>
-                    {% else %}
-                    <span class="badge badge-manuale">Manuale</span>
-                    {% endif %}
-                </td>
-                <td><strong>€ {{ "%.2f"|format(f.totale if f.totale else 0) }}</strong></td>
-                <td style="color:#6b7280; font-size:13px;">
-                    {{ f.data_scadenza | replace("-", "/") if f.data_scadenza else "—" }}
-                </td>
-                <td style="max-width:140px; color:#6b7280; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                    {{ f.note or "—" }}
-                </td>
-                <td>
-                    {% if f.stato_pagamento == "Pagata" %}
-                    <span class="badge badge-pagata">Pagata</span>
-                    {% elif f.stato_pagamento == "In attesa" %}
-                    <span class="badge badge-attesa">In attesa</span>
-                    {% else %}
-                    <span class="badge badge-non-pagata">Non pagata</span>
-                    {% endif %}
-                </td>
-                <td style="white-space:nowrap;">
-                    <a href="/fattura/{{ f.id }}" class="action-link">Apri</a>
-                    {% if f.stato == "CHIUSA" %}
-                    &nbsp;·&nbsp;
-                    <a href="/pdf/{{ f.id }}" class="action-link" style="color:#059669;">⬇ PDF</a>
-                    {% endif %}
-                    &nbsp;·&nbsp;
-                    <a href="/delete_fattura/{{ f.id }}"
-                       onclick="return confirm('Eliminare fattura {{ f.numero }}?')"
-                       class="action-link danger">Elimina</a>
-                </td>
-            </tr>
-            {% else %}
-            <tr>
-                <td colspan="9" style="text-align:center; color:#9ca3af; padding:2rem;">
-                    Nessuna fattura. <a href="/nuova_fattura" class="action-link">Crea la prima</a>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
 
 {% endblock %}
