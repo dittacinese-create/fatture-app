@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Accesso — Gestione Fatture</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: #f4f5f7;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .login-box {
+            background: white;
+            border-radius: 12px;
+            border: 1px solid #e8ecf0;
+            padding: 2.5rem 2rem;
+            width: 100%;
+            max-width: 380px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+        }
+        .logo {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        .logo .icon { font-size: 2.5rem; }
+        .logo h1 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1a1a2e;
+            margin-top: 0.5rem;
+        }
+        .logo p {
+            font-size: 13px;
+            color: #6b7280;
+            margin-top: 4px;
+        }
+        label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            color: #374151;
+            margin-bottom: 5px;
+        }
+        input[type="password"] {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #d0d5dd;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #1a1a2e;
+            margin-bottom: 1rem;
+        }
+        input[type="password"]:focus {
+            outline: none;
+            border-color: #1a1a2e;
+        }
+        button {
+            width: 100%;
+            padding: 10px;
+            background: #1a1a2e;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+        button:hover { background: #2d2d4e; }
+        .errore {
+            background: #fee2e2;
+            color: #991b1b;
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: 13px;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+<div class="login-box">
+    <div class="logo">
+        <div class="icon">🧾</div>
+        <h1>Gestione Fatture</h1>
+        <p>Inserisci la password per accedere</p>
+    </div>
+    {% if errore %}
+    <div class="errore">Password errata. Riprova.</div>
+    {% endif %}
+    <form method="POST" action="/login">
+        <label>Password</label>
+        <input type="password" name="password" placeholder="••••••••" autofocus required>
+        <button type="submit">Accedi</button>
+    </form>
+</div>
+</body>
+</html>
