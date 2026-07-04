@@ -1,9 +1,11 @@
-from flask import Flask, render_template, request, redirect, make_response, send_file, jsonify
+from flask import Flask, render_template, request, redirect, make_response, send_file, jsonify, session
 from database import init_db, get_db, return_db
-from config import AZIENDA
+from config import AZIENDA, PASSWORD_ACCESSO
+from functools import wraps
 import os
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "chiave-segreta-fatture-2026")
 
 @app.context_processor
 def inject_request():
@@ -13,24 +15,56 @@ with app.app_context():
     init_db()
 
 # =========================
+# LOGIN
+# =========================
+
+def login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get("logged_in"):
+            return redirect("/login")
+        return f(*args, **kwargs)
+    return decorated
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if session.get("logged_in"):
+        return redirect("/fatture")
+    errore = False
+    if request.method == "POST":
+        if request.form.get("password") == PASSWORD_ACCESSO:
+            session["logged_in"] = True
+            return redirect("/fatture")
+        errore = True
+    return render_template("login.html", errore=errore)
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect("/login")
+
+# =========================
 # CLIENTI
 # =========================
 
 @app.route("/")
+@login_required
 def home():
     return redirect("/fatture")
 
 @app.route("/clienti")
+@login_required
 def clienti():
     db = get_db()
     cur = db.cursor()
-    cur.execute("SELECT * FROM clienti ORDER BY id DESC")
+    cur.execute("SELECT * FROM clienti ORDER BY nome ASC")
     clienti = cur.fetchall()
     cur.close()
     return_db(db)
     return render_template("clienti.html", clienti=clienti)
 
 @app.route("/add", methods=["POST"])
+@login_required
 def add():
     db = get_db()
     cur = db.cursor()
@@ -50,7 +84,36 @@ def add():
     return_db(db)
     return redirect("/clienti")
 
+@app.route("/modifica_cliente/<int:id>", methods=["POST"])
+@login_required
+def modifica_cliente(id):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("""
+        UPDATE clienti SET
+            nome = %s,
+            indirizzo = %s,
+            partita_iva = %s,
+            codice_fiscale = %s,
+            codice_sdi = %s,
+            pec = %s
+        WHERE id = %s
+    """, (
+        request.form["nome"],
+        request.form["indirizzo"],
+        request.form["partita_iva"],
+        request.form["codice_fiscale"],
+        request.form["codice_sdi"],
+        request.form["pec"],
+        id
+    ))
+    db.commit()
+    cur.close()
+    return_db(db)
+    return jsonify({"success": True})
+
 @app.route("/delete_cliente/<int:id>")
+@login_required
 def delete_cliente(id):
     db = get_db()
     cur = db.cursor()
@@ -65,16 +128,18 @@ def delete_cliente(id):
 # =========================
 
 @app.route("/prodotti")
+@login_required
 def prodotti():
     db = get_db()
     cur = db.cursor()
-    cur.execute("SELECT * FROM prodotti ORDER BY id DESC")
+    cur.execute("SELECT * FROM prodotti ORDER BY nome ASC")
     prodotti = cur.fetchall()
     cur.close()
     return_db(db)
     return render_template("prodotti.html", prodotti=prodotti)
 
 @app.route("/add_prodotto_ajax", methods=["POST"])
+@login_required
 def add_prodotto_ajax():
     data = request.get_json()
     nome = data.get("nome", "").strip()
@@ -95,6 +160,7 @@ def add_prodotto_ajax():
     return jsonify({"success": True, "id": nuovo_id})
 
 @app.route("/add_prodotto", methods=["POST"])
+@login_required
 def add_prodotto():
     db = get_db()
     cur = db.cursor()
@@ -111,7 +177,31 @@ def add_prodotto():
     return_db(db)
     return redirect("/prodotti")
 
+@app.route("/modifica_prodotto/<int:id>", methods=["POST"])
+@login_required
+def modifica_prodotto(id):
+    data = request.get_json()
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("""
+        UPDATE prodotti SET
+            nome = %s,
+            prezzo_base = %s,
+            unita_misura = %s
+        WHERE id = %s
+    """, (
+        data.get("nome"),
+        float(data.get("prezzo_base", 0)),
+        data.get("unita_misura", "mq"),
+        id
+    ))
+    db.commit()
+    cur.close()
+    return_db(db)
+    return jsonify({"success": True})
+
 @app.route("/delete_prodotto/<int:id>")
+@login_required
 def delete_prodotto(id):
     db = get_db()
     cur = db.cursor()
@@ -126,6 +216,7 @@ def delete_prodotto(id):
 # =========================
 
 @app.route("/fatture")
+@login_required
 def fatture():
     db = get_db()
     cur = db.cursor()
@@ -141,6 +232,7 @@ def fatture():
     return render_template("fatture.html", fatture=fatture)
 
 @app.route("/nuova_fattura")
+@login_required
 def nuova_fattura():
     db = get_db()
     cur = db.cursor()
@@ -151,6 +243,7 @@ def nuova_fattura():
     return render_template("nuova_fattura.html", clienti=clienti)
 
 @app.route("/add_fattura", methods=["POST"])
+@login_required
 def add_fattura():
     db = get_db()
     cur = db.cursor()
@@ -179,6 +272,7 @@ def add_fattura():
     return redirect(f"/fattura/{fattura_id}")
 
 @app.route("/aggiorna_fattura_ajax/<int:id>", methods=["POST"])
+@login_required
 def aggiorna_fattura_ajax(id):
     data = request.get_json()
     db = get_db()
@@ -202,8 +296,8 @@ def aggiorna_fattura_ajax(id):
     return_db(db)
     return jsonify({"success": True})
 
-
 @app.route("/aggiorna_fattura/<int:id>", methods=["POST"])
+@login_required
 def aggiorna_fattura(id):
     db = get_db()
     cur = db.cursor()
@@ -226,8 +320,8 @@ def aggiorna_fattura(id):
     return_db(db)
     return redirect(f"/fattura/{id}")
 
-
 @app.route("/delete_fattura/<int:id>")
+@login_required
 def delete_fattura(id):
     db = get_db()
     cur = db.cursor()
@@ -244,11 +338,8 @@ def delete_fattura(id):
     return_db(db)
     return redirect("/fatture")
 
-# =========================
-# CHIUDI FATTURA — calcola e salva il totale
-# =========================
-
 @app.route("/chiudi_fattura/<int:id>")
+@login_required
 def chiudi_fattura(id):
     db = get_db()
     cur = db.cursor()
@@ -262,32 +353,24 @@ def chiudi_fattura(id):
         WHERE d.fattura_id = %s
     """, (id,))
     righe_ddt = cur.fetchall()
-
     if fattura["tipo"] == "FORNITURA":
         imponibile = round(sum(r["totale"] for r in righe_ddt), 2)
     else:
         imponibile = round(sum(r["totale"] for r in righe), 2)
-
     if fattura["regime_iva"] == "22":
         iva = round(imponibile * 0.22, 2)
         totale = round(imponibile + iva, 2)
     else:
         iva = 0
         totale = imponibile
-
-    cur.execute("""
-        UPDATE fatture SET stato='CHIUSA', totale=%s WHERE id=%s
-    """, (totale, id))
+    cur.execute("UPDATE fatture SET stato='CHIUSA', totale=%s WHERE id=%s", (totale, id))
     db.commit()
     cur.close()
     return_db(db)
     return redirect(f"/fattura/{id}")
 
-# =========================
-# DETTAGLIO FATTURA
-# =========================
-
 @app.route("/fattura/<int:id>")
+@login_required
 def fattura_dettaglio(id):
     db = get_db()
     cur = db.cursor()
@@ -301,7 +384,7 @@ def fattura_dettaglio(id):
     fattura = cur.fetchone()
     cur.execute("SELECT * FROM righe_fattura WHERE fattura_id=%s ORDER BY id ASC", (id,))
     righe = cur.fetchall()
-    cur.execute("SELECT * FROM prodotti ORDER BY nome")
+    cur.execute("SELECT * FROM prodotti ORDER BY nome", )
     prodotti = cur.fetchall()
     cur.execute("SELECT * FROM ddt WHERE fattura_id=%s ORDER BY id ASC", (id,))
     ddt_list = cur.fetchall()
@@ -313,12 +396,10 @@ def fattura_dettaglio(id):
     righe_ddt = cur.fetchall()
     cur.close()
     return_db(db)
-
     if fattura["tipo"] == "FORNITURA":
         imponibile = sum(r["totale"] for r in righe_ddt)
     else:
         imponibile = sum(r["totale"] for r in righe)
-
     if fattura["regime_iva"] == "22":
         iva = round(imponibile * 0.22, 2)
         totale = round(imponibile + iva, 2)
@@ -327,7 +408,6 @@ def fattura_dettaglio(id):
         iva = 0
         totale = imponibile
         nota_iva = "Operazione soggetta a Reverse Charge – IVA assolta dal committente (art. 17 c. 6/A DPR 633/72)"
-
     return render_template(
         "fattura_dettaglio.html",
         fattura=fattura, righe=righe, prodotti=prodotti,
@@ -340,6 +420,7 @@ def fattura_dettaglio(id):
 # =========================
 
 @app.route("/add_riga", methods=["POST"])
+@login_required
 def add_riga():
     db = get_db()
     cur = db.cursor()
@@ -358,6 +439,7 @@ def add_riga():
     return redirect(f"/fattura/{fattura_id}")
 
 @app.route("/delete_riga_fattura/<int:id>/<int:fattura_id>")
+@login_required
 def delete_riga_fattura(id, fattura_id):
     db = get_db()
     cur = db.cursor()
@@ -368,6 +450,7 @@ def delete_riga_fattura(id, fattura_id):
     return redirect(f"/fattura/{fattura_id}")
 
 @app.route("/delete_riga_ddt/<int:id>/<int:fattura_id>")
+@login_required
 def delete_riga_ddt(id, fattura_id):
     db = get_db()
     cur = db.cursor()
@@ -382,6 +465,7 @@ def delete_riga_ddt(id, fattura_id):
 # =========================
 
 @app.route("/add_ddt", methods=["POST"])
+@login_required
 def add_ddt():
     db = get_db()
     cur = db.cursor()
@@ -394,6 +478,7 @@ def add_ddt():
     return redirect(f"/fattura/{request.form['fattura_id']}")
 
 @app.route("/delete_ddt/<int:ddt_id>/<int:fattura_id>")
+@login_required
 def delete_ddt(ddt_id, fattura_id):
     db = get_db()
     cur = db.cursor()
@@ -405,6 +490,7 @@ def delete_ddt(ddt_id, fattura_id):
     return redirect(f"/fattura/{fattura_id}")
 
 @app.route("/add_riga_prodotto", methods=["POST"])
+@login_required
 def add_riga_prodotto():
     db = get_db()
     cur = db.cursor()
@@ -431,6 +517,7 @@ def add_riga_prodotto():
 # =========================
 
 @app.route("/pdf/<int:id>")
+@login_required
 def pdf(id):
     from xhtml2pdf import pisa
     import io
@@ -457,7 +544,6 @@ def pdf(id):
     righe_ddt = cur.fetchall()
     cur.close()
     return_db(db)
-
     righe_pdf = righe_ddt if fattura["tipo"] == "FORNITURA" else righe
     imponibile = round(sum(r["totale"] for r in righe_pdf), 2)
     if fattura["regime_iva"] == "22":
@@ -466,7 +552,6 @@ def pdf(id):
     else:
         iva = 0
         totale = imponibile
-
     html_content = render_template(
         "pdf_fattura.html",
         fattura=fattura, azienda=AZIENDA,
