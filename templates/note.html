@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="topbar">
+    <h1>Note</h1>
+    <button onclick="nuovaNota()" class="btn btn-primary">+ Nuova nota</button>
+</div>
+
+<div style="display:flex; gap:1.5rem; align-items:flex-start;">
+
+    <!-- LISTA NOTE -->
+    <div id="lista_note" style="width:240px; flex-shrink:0;">
+        {% for nota in note %}
+        <div class="nota-item {% if loop.first %}attiva{% endif %}"
+             id="item_{{ nota.id }}"
+             onclick="apriNota({{ nota.id }}, this)">
+            <div class="nota-titolo">{{ nota.titolo or 'Senza titolo' }}</div>
+            <div class="nota-data">{{ nota.data_modifica or nota.data_creazione }}</div>
+        </div>
+        {% else %}
+        <div style="color:#9ca3af; font-size:13px; padding:1rem 0;">
+            Nessuna nota. Creane una.
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- EDITOR -->
+    <div style="flex:1; min-width:0;">
+        {% if note %}
+        <div class="card" style="padding:0;">
+
+            <!-- TITOLO -->
+            <div style="padding:1rem 1.25rem; border-bottom:1px solid #e8ecf0;">
+                <input type="text"
+                       id="titolo_nota"
+                       placeholder="Titolo nota..."
+                       style="width:100%; border:none; font-size:16px; font-weight:600; color:#1a1a2e; outline:none; background:transparent;"
+                       oninput="salvaNota()">
+            </div>
+
+            <!-- TOOLBAR -->
+            <div style="padding:0.6rem 1rem; border-bottom:1px solid #e8ecf0; display:flex; gap:4px; flex-wrap:wrap; align-items:center;">
+
+                <!-- Dimensione testo -->
+                <select onchange="eseguiComando('fontSize', this.value); this.blur();"
+                        style="padding:4px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:12px; margin-right:4px;">
+                    <option value="2">Piccolo</option>
+                    <option value="3" selected>Normale</option>
+                    <option value="4">Grande</option>
+                    <option value="5">Titolo</option>
+                </select>
+
+                <!-- Grassetto, Corsivo, Sottolineato -->
+                <button class="tool-btn" onclick="eseguiComando('bold')" title="Grassetto"><b>G</b></button>
+                <button class="tool-btn" onclick="eseguiComando('italic')" title="Corsivo"><i>C</i></button>
+                <button class="tool-btn" onclick="eseguiComando('underline')" title="Sottolineato"><u>S</u></button>
+
+                <div style="width:1px; height:20px; background:#e8ecf0; margin:0 4px;"></div>
+
+                <!-- Allineamento -->
+                <button class="tool-btn" onclick="eseguiComando('justifyLeft')" title="Sinistra">⬅</button>
+                <button class="tool-btn" onclick="eseguiComando('justifyCenter')" title="Centro">↔</button>
+                <button class="tool-btn" onclick="eseguiComando('justifyRight')" title="Destra">➡</button>
+
+                <div style="width:1px; height:20px; background:#e8ecf0; margin:0 4px;"></div>
+
+                <!-- Colore testo -->
+                <button class="tool-btn" onclick="eseguiComando('foreColor', '#000000')" title="Nero" style="color:#000;">A</button>
+                <button class="tool-btn" onclick="eseguiComando('foreColor', '#dc2626')" title="Rosso" style="color:#dc2626;">A</button>
+
+                <!-- Evidenziazione gialla -->
+                <button class="tool-btn" onclick="eseguiComando('hiliteColor', '#fef08a')" title="Evidenzia" style="background:#fef08a; font-weight:600;">E</button>
+
+                <div style="width:1px; height:20px; background:#e8ecf0; margin:0 4px;"></div>
+
+                <!-- Salva manuale + conferma -->
+                <button onclick="salvaNota(true)" class="btn btn-primary btn-sm" style="margin-left:4px;">Salva</button>
+                <span id="msg_salvato" style="display:none; color:#059669; font-size:12px; font-weight:600;">✓ Salvato</span>
+
+                <!-- Elimina -->
+                <button onclick="eliminaNota()" class="btn btn-danger btn-sm" style="margin-left:auto;">🗑 Elimina</button>
+            </div>
+
+            <!-- AREA TESTO -->
+            <div id="editor"
+                 contenteditable="true"
+                 style="min-height:400px; padding:1.25rem; font-family:'Segoe UI',sans-serif; font-size:14px; color:#1a1a2e; outline:none; line-height:1.7;"
+                 oninput="salvaNota()">
+            </div>
+        </div>
+        {% else %}
+        <div style="text-align:center; color:#9ca3af; padding:4rem; background:white; border-radius:12px; border:1px solid #e8ecf0;">
+            <div style="font-size:2rem; margin-bottom:1rem;">📝</div>
+            <div>Nessuna nota. Clicca <strong>+ Nuova nota</strong> per iniziare.</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+.nota-item {
+    padding: 10px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    margin-bottom: 4px;
+    border: 1px solid transparent;
+    transition: all 0.15s;
+}
+.nota-item:hover { background: #f4f5f7; }
+.nota-item.attiva { background: #f0f4ff; border-color: #c7d7ff; }
+.nota-titolo { font-size: 13px; font-weight: 600; color: #1a1a2e; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nota-data { font-size: 11px; color: #9ca3af; }
+.tool-btn {
+    width: 28px; height: 28px;
+    border: 1px solid #d0d5dd;
+    border-radius: 6px;
+    background: white;
+    cursor: pointer;
+    font-size: 13px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+}
+.tool-btn:hover { background: #f4f5f7; border-color: #1a1a2e; }
+</style>
+
+<script>
+let notaCorrenteId = {{ note[0].id if note else 'null' }};
+let salvaTimeout = null;
+
+// Carica la prima nota all'apertura
+{% if note %}
+window.onload = function() {
+    caricaNota({{ note[0].id }});
+}
+{% endif %}
+
+function eseguiComando(cmd, valore) {
+    document.getElementById("editor").focus();
+    document.execCommand(cmd, false, valore || null);
+}
+
+function apriNota(id, el) {
+    document.querySelectorAll(".nota-item").forEach(function(i) { i.classList.remove("attiva"); });
+    el.classList.add("attiva");
+    caricaNota(id);
+}
+
+function caricaNota(id) {
+    notaCorrenteId = id;
+    fetch("/nota/" + id)
+    .then(r => r.json())
+    .then(function(data) {
+        document.getElementById("titolo_nota").value = data.titolo || "";
+        document.getElementById("editor").innerHTML = data.contenuto || "";
+    });
+}
+
+function salvaNota(manuale) {
+    if (!notaCorrenteId) return;
+    clearTimeout(salvaTimeout);
+    salvaTimeout = setTimeout(function() {
+        const titolo = document.getElementById("titolo_nota").value;
+        const contenuto = document.getElementById("editor").innerHTML;
+        fetch("/salva_nota/" + notaCorrenteId, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ titolo: titolo, contenuto: contenuto })
+        }).then(r => r.json()).then(function(data) {
+            if (data.success) {
+                // Aggiorna titolo nella lista
+                const item = document.getElementById("item_" + notaCorrenteId);
+                if (item) item.querySelector(".nota-titolo").textContent = titolo || "Senza titolo";
+                if (manuale) {
+                    const msg = document.getElementById("msg_salvato");
+                    msg.style.display = "inline";
+                    setTimeout(function() { msg.style.display = "none"; }, 2000);
+                }
+            }
+        });
+    }, manuale ? 0 : 1500);
+}
+
+function nuovaNota() {
+    fetch("/nuova_nota", { method: "POST" })
+    .then(r => r.json())
+    .then(function(data) {
+        if (data.success) window.location.reload();
+    });
+}
+
+function eliminaNota() {
+    if (!notaCorrenteId) return;
+    if (!confirm("Eliminare questa nota?")) return;
+    fetch("/elimina_nota/" + notaCorrenteId, { method: "POST" })
+    .then(r => r.json())
+    .then(function(data) {
+        if (data.success) window.location.reload();
+    });
+}
+</script>
+
+{% endblock %}
