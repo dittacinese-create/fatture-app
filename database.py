@@ -90,6 +90,7 @@ def init_db():
             data_creazione TEXT DEFAULT CURRENT_DATE,
             data_modifica TEXT DEFAULT CURRENT_DATE
         );
+        CREATE TABLE IF NOT EXISTS righe_ddt (
             id SERIAL PRIMARY KEY,
             ddt_id INTEGER NOT NULL,
             prodotto_id INTEGER,
