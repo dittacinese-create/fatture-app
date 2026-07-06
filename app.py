@@ -513,6 +513,71 @@ def add_riga_prodotto():
     return redirect(f"/fattura/{fattura_id}")
 
 # =========================
+# NOTE
+# =========================
+
+@app.route("/note")
+@login_required
+def note():
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT * FROM note ORDER BY data_modifica DESC, id DESC")
+    note = cur.fetchall()
+    cur.close()
+    return_db(db)
+    return render_template("note.html", note=note)
+
+@app.route("/nuova_nota", methods=["POST"])
+@login_required
+def nuova_nota():
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("INSERT INTO note (titolo, contenuto) VALUES ('', '') RETURNING id")
+    nuovo_id = cur.fetchone()["id"]
+    db.commit()
+    cur.close()
+    return_db(db)
+    return jsonify({"success": True, "id": nuovo_id})
+
+@app.route("/nota/<int:id>")
+@login_required
+def get_nota(id):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT * FROM note WHERE id=%s", (id,))
+    nota = cur.fetchone()
+    cur.close()
+    return_db(db)
+    return jsonify({"titolo": nota["titolo"], "contenuto": nota["contenuto"]})
+
+@app.route("/salva_nota/<int:id>", methods=["POST"])
+@login_required
+def salva_nota(id):
+    data = request.get_json()
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("""
+        UPDATE note SET titolo=%s, contenuto=%s, data_modifica=CURRENT_DATE
+        WHERE id=%s
+    """, (data.get("titolo", ""), data.get("contenuto", ""), id))
+    db.commit()
+    cur.close()
+    return_db(db)
+    return jsonify({"success": True})
+
+@app.route("/elimina_nota/<int:id>", methods=["POST"])
+@login_required
+def elimina_nota(id):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("DELETE FROM note WHERE id=%s", (id,))
+    db.commit()
+    cur.close()
+    return_db(db)
+    return jsonify({"success": True})
+
+
+# =========================
 # PDF
 # =========================
 

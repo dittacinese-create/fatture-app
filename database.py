@@ -83,7 +83,13 @@ def init_db():
             numero TEXT NOT NULL,
             data TEXT NOT NULL
         );
-        CREATE TABLE IF NOT EXISTS righe_ddt (
+        CREATE TABLE IF NOT EXISTS note (
+            id SERIAL PRIMARY KEY,
+            titolo TEXT DEFAULT '',
+            contenuto TEXT DEFAULT '',
+            data_creazione TEXT DEFAULT CURRENT_DATE,
+            data_modifica TEXT DEFAULT CURRENT_DATE
+        );
             id SERIAL PRIMARY KEY,
             ddt_id INTEGER NOT NULL,
             prodotto_id INTEGER,
