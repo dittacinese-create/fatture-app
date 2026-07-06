@@ -224,7 +224,7 @@ def fatture():
         SELECT f.*, c.nome AS cliente_nome
         FROM fatture f
         JOIN clienti c ON c.id = f.cliente_id
-        ORDER BY f.id DESC
+        ORDER BY f.numero DESC
     """)
     fatture = cur.fetchall()
     cur.close()
