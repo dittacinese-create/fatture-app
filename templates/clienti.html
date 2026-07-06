@@ -43,17 +43,11 @@
 <div class="topbar" style="margin-top:1.5rem; margin-bottom:1rem;">
     <h2 style="font-size:16px; font-weight:600; color:#1a1a2e;">
         Clienti salvati
-        <span style="font-size:13px; font-weight:400; color:#6b7280; margin-left:8px;">
-            {{ clienti|length }} totali
-        </span>
+        <span style="font-size:13px; font-weight:400; color:#6b7280; margin-left:8px;">{{ clienti|length }} totali</span>
     </h2>
     <div class="search-bar">
         <span class="search-icon">🔍</span>
-        <input type="text"
-               id="search_cliente"
-               placeholder="Cerca per nome, P.IVA, SDI..."
-               oninput="cercaCliente()"
-               autocomplete="off">
+        <input type="text" id="search_cliente" placeholder="Cerca per nome, P.IVA, SDI..." oninput="cercaCliente()" autocomplete="off">
     </div>
 </div>
 
@@ -67,23 +61,42 @@
                 <th>Cod. Fiscale</th>
                 <th>SDI</th>
                 <th>PEC</th>
-                <th></th>
+                <th style="width:150px;"></th>
             </tr>
         </thead>
         <tbody>
             {% for c in clienti %}
-            <tr>
-                <td><strong>{{ c.nome }}</strong></td>
-                <td style="color:#6b7280;">{{ c.indirizzo }}</td>
-                <td>{{ c.partita_iva }}</td>
-                <td>{{ c.codice_fiscale }}</td>
+            <tr id="riga_c_{{ c.id }}">
                 <td>
-                    {% if c.codice_sdi %}
-                    <span class="badge badge-fornitura">{{ c.codice_sdi }}</span>
-                    {% endif %}
+                    <span id="c_nome_{{ c.id }}"><strong>{{ c.nome }}</strong></span>
+                    <input id="ci_nome_{{ c.id }}" value="{{ c.nome }}" style="display:none; width:100%; padding:4px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px;">
                 </td>
-                <td style="color:#6b7280; font-size:12px;">{{ c.pec }}</td>
                 <td>
+                    <span id="c_ind_{{ c.id }}" style="color:#6b7280;">{{ c.indirizzo }}</span>
+                    <input id="ci_ind_{{ c.id }}" value="{{ c.indirizzo or '' }}" style="display:none; width:100%; padding:4px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px;">
+                </td>
+                <td>
+                    <span id="c_piva_{{ c.id }}">{{ c.partita_iva }}</span>
+                    <input id="ci_piva_{{ c.id }}" value="{{ c.partita_iva or '' }}" style="display:none; width:100%; padding:4px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px;">
+                </td>
+                <td>
+                    <span id="c_cf_{{ c.id }}">{{ c.codice_fiscale }}</span>
+                    <input id="ci_cf_{{ c.id }}" value="{{ c.codice_fiscale or '' }}" style="display:none; width:100%; padding:4px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px;">
+                </td>
+                <td>
+                    <span id="c_sdi_{{ c.id }}">{% if c.codice_sdi %}<span class="badge badge-fornitura">{{ c.codice_sdi }}</span>{% endif %}</span>
+                    <input id="ci_sdi_{{ c.id }}" value="{{ c.codice_sdi or '' }}" style="display:none; width:80px; padding:4px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px;">
+                </td>
+                <td>
+                    <span id="c_pec_{{ c.id }}" style="color:#6b7280; font-size:12px;">{{ c.pec }}</span>
+                    <input id="ci_pec_{{ c.id }}" value="{{ c.pec or '' }}" style="display:none; width:100%; padding:4px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px;">
+                </td>
+                <td style="white-space:nowrap;">
+                    <a onclick="modificaCliente({{ c.id }})" id="btn_mc_{{ c.id }}" class="action-link" style="cursor:pointer;">Modifica</a>
+                    &nbsp;·&nbsp;
+                    <a onclick="salvaCliente({{ c.id }})" id="btn_sc_{{ c.id }}" class="action-link" style="cursor:pointer; display:none; color:#059669;">Salva</a>
+                    <a onclick="annullaCliente({{ c.id }})" id="btn_ac_{{ c.id }}" class="action-link danger" style="cursor:pointer; display:none;">Annulla</a>
+                    &nbsp;·&nbsp;
                     <a href="/delete_cliente/{{ c.id }}"
                        onclick="return confirm('Eliminare {{ c.nome }}?')"
                        class="action-link danger">Elimina</a>
@@ -91,9 +104,7 @@
             </tr>
             {% else %}
             <tr>
-                <td colspan="7" style="text-align:center; color:#9ca3af; padding:2rem;">
-                    Nessun cliente. Aggiungine uno sopra.
-                </td>
+                <td colspan="7" style="text-align:center; color:#9ca3af; padding:2rem;">Nessun cliente.</td>
             </tr>
             {% endfor %}
         </tbody>
@@ -103,8 +114,59 @@
 <script>
 function cercaCliente() {
     const query = document.getElementById("search_cliente").value.toLowerCase();
-    document.querySelectorAll("#tabella_clienti tbody tr").forEach(function(riga) {
-        riga.style.display = riga.textContent.toLowerCase().includes(query) ? "" : "none";
+    document.querySelectorAll("#tabella_clienti tbody tr").forEach(function(r) {
+        r.style.display = r.textContent.toLowerCase().includes(query) ? "" : "none";
+    });
+}
+
+function modificaCliente(id) {
+    ["nome","ind","piva","cf","sdi","pec"].forEach(function(campo) {
+        document.getElementById("c_" + campo + "_" + id).style.display = "none";
+        document.getElementById("ci_" + campo + "_" + id).style.display = "inline-block";
+    });
+    document.getElementById("btn_mc_" + id).style.display = "none";
+    document.getElementById("btn_sc_" + id).style.display = "inline";
+    document.getElementById("btn_ac_" + id).style.display = "inline";
+}
+
+function annullaCliente(id) {
+    ["nome","ind","piva","cf","sdi","pec"].forEach(function(campo) {
+        document.getElementById("c_" + campo + "_" + id).style.display = "inline";
+        document.getElementById("ci_" + campo + "_" + id).style.display = "none";
+    });
+    document.getElementById("btn_mc_" + id).style.display = "inline";
+    document.getElementById("btn_sc_" + id).style.display = "none";
+    document.getElementById("btn_ac_" + id).style.display = "none";
+}
+
+function salvaCliente(id) {
+    const nome = document.getElementById("ci_nome_" + id).value;
+    const indirizzo = document.getElementById("ci_ind_" + id).value;
+    const partita_iva = document.getElementById("ci_piva_" + id).value;
+    const codice_fiscale = document.getElementById("ci_cf_" + id).value;
+    const codice_sdi = document.getElementById("ci_sdi_" + id).value;
+    const pec = document.getElementById("ci_pec_" + id).value;
+
+    const formData = new FormData();
+    formData.append("nome", nome);
+    formData.append("indirizzo", indirizzo);
+    formData.append("partita_iva", partita_iva);
+    formData.append("codice_fiscale", codice_fiscale);
+    formData.append("codice_sdi", codice_sdi);
+    formData.append("pec", pec);
+
+    fetch("/modifica_cliente/" + id, { method: "POST", body: formData })
+    .then(r => r.json())
+    .then(function(data) {
+        if (data.success) {
+            document.getElementById("c_nome_" + id).innerHTML = "<strong>" + nome + "</strong>";
+            document.getElementById("c_ind_" + id).textContent = indirizzo;
+            document.getElementById("c_piva_" + id).textContent = partita_iva;
+            document.getElementById("c_cf_" + id).textContent = codice_fiscale;
+            document.getElementById("c_sdi_" + id).innerHTML = codice_sdi ? '<span class="badge badge-fornitura">' + codice_sdi + '</span>' : '';
+            document.getElementById("c_pec_" + id).textContent = pec;
+            annullaCliente(id);
+        }
     });
 }
 </script>

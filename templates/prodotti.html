@@ -14,7 +14,7 @@
                 <input name="nome" placeholder="es. Quadrettoni 80x80 sp 3/5 misto" required>
             </div>
             <div class="form-group" style="max-width:120px;">
-                <label>Prezzo base (€) *</label>
+                <label>Prezzo (€) *</label>
                 <input type="number" step="0.01" name="prezzo_base" placeholder="0.00" required>
             </div>
             <div class="form-group" style="max-width:110px;">
@@ -38,17 +38,11 @@
 <div class="topbar" style="margin-top:1.5rem; margin-bottom:1rem;">
     <h2 style="font-size:16px; font-weight:600; color:#1a1a2e;">
         Catalogo prodotti
-        <span style="font-size:13px; font-weight:400; color:#6b7280; margin-left:8px;">
-            {{ prodotti|length }} prodotti
-        </span>
+        <span style="font-size:13px; font-weight:400; color:#6b7280; margin-left:8px;">{{ prodotti|length }} prodotti</span>
     </h2>
     <div class="search-bar">
         <span class="search-icon">🔍</span>
-        <input type="text"
-               id="search_prodotto"
-               placeholder="Cerca prodotto..."
-               oninput="cercaProdotto()"
-               autocomplete="off">
+        <input type="text" id="search_prodotto" placeholder="Cerca prodotto..." oninput="cercaProdotto()" autocomplete="off">
     </div>
 </div>
 
@@ -58,21 +52,37 @@
             <tr>
                 <th>Nome prodotto</th>
                 <th style="width:120px;">U.M.</th>
-                <th style="width:160px;">Prezzo base</th>
-                <th style="width:80px;"></th>
+                <th style="width:140px;">Prezzo base</th>
+                <th style="width:120px;"></th>
             </tr>
         </thead>
         <tbody>
             {% for p in prodotti %}
-            <tr>
-                <td><strong>{{ p.nome }}</strong></td>
-                <td>{{ p.unita_misura }}</td>
+            <tr id="riga_p_{{ p.id }}">
                 <td>
-                    <span style="font-size:15px; font-weight:600; color:#1a1a2e;">
-                        € {{ "%.2f"|format(p.prezzo_base) }}
-                    </span>
+                    <span id="nome_{{ p.id }}">{{ p.nome }}</span>
+                    <input id="input_nome_{{ p.id }}" value="{{ p.nome }}" style="display:none; width:100%; padding:4px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px;">
                 </td>
                 <td>
+                    <span id="um_{{ p.id }}">{{ p.unita_misura }}</span>
+                    <select id="input_um_{{ p.id }}" style="display:none; padding:4px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px;">
+                        <option value="mq" {% if p.unita_misura == "mq" %}selected{% endif %}>mq</option>
+                        <option value="pz" {% if p.unita_misura == "pz" %}selected{% endif %}>pz</option>
+                        <option value="gg" {% if p.unita_misura == "gg" %}selected{% endif %}>gg</option>
+                        <option value="ml" {% if p.unita_misura == "ml" %}selected{% endif %}>ml</option>
+                        <option value="qli" {% if p.unita_misura == "qli" %}selected{% endif %}>qli</option>
+                    </select>
+                </td>
+                <td>
+                    <span id="prezzo_{{ p.id }}" style="font-weight:600;">€ {{ "%.2f"|format(p.prezzo_base) }}</span>
+                    <input id="input_prezzo_{{ p.id }}" type="number" step="0.01" value="{{ p.prezzo_base }}" style="display:none; width:90px; padding:4px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px;">
+                </td>
+                <td style="white-space:nowrap;">
+                    <a onclick="modificaProdotto({{ p.id }})" id="btn_modifica_{{ p.id }}" class="action-link" style="cursor:pointer;">Modifica</a>
+                    &nbsp;·&nbsp;
+                    <a onclick="salvaProdotto({{ p.id }})" id="btn_salva_{{ p.id }}" class="action-link" style="cursor:pointer; display:none; color:#059669;">Salva</a>
+                    <a onclick="annullaProdotto({{ p.id }})" id="btn_annulla_{{ p.id }}" class="action-link danger" style="cursor:pointer; display:none;">Annulla</a>
+                    &nbsp;·&nbsp;
                     <a href="/delete_prodotto/{{ p.id }}"
                        onclick="return confirm('Eliminare {{ p.nome }}?')"
                        class="action-link danger">Elimina</a>
@@ -80,9 +90,7 @@
             </tr>
             {% else %}
             <tr>
-                <td colspan="4" style="text-align:center; color:#9ca3af; padding:2rem;">
-                    Nessun prodotto nel catalogo.
-                </td>
+                <td colspan="4" style="text-align:center; color:#9ca3af; padding:2rem;">Nessun prodotto nel catalogo.</td>
             </tr>
             {% endfor %}
         </tbody>
@@ -92,8 +100,51 @@
 <script>
 function cercaProdotto() {
     const query = document.getElementById("search_prodotto").value.toLowerCase();
-    document.querySelectorAll("#tabella_prodotti tbody tr").forEach(function(riga) {
-        riga.style.display = riga.textContent.toLowerCase().includes(query) ? "" : "none";
+    document.querySelectorAll("#tabella_prodotti tbody tr").forEach(function(r) {
+        r.style.display = r.textContent.toLowerCase().includes(query) ? "" : "none";
+    });
+}
+
+function modificaProdotto(id) {
+    document.getElementById("nome_" + id).style.display = "none";
+    document.getElementById("um_" + id).style.display = "none";
+    document.getElementById("prezzo_" + id).style.display = "none";
+    document.getElementById("input_nome_" + id).style.display = "inline-block";
+    document.getElementById("input_um_" + id).style.display = "inline-block";
+    document.getElementById("input_prezzo_" + id).style.display = "inline-block";
+    document.getElementById("btn_modifica_" + id).style.display = "none";
+    document.getElementById("btn_salva_" + id).style.display = "inline";
+    document.getElementById("btn_annulla_" + id).style.display = "inline";
+}
+
+function annullaProdotto(id) {
+    document.getElementById("nome_" + id).style.display = "inline";
+    document.getElementById("um_" + id).style.display = "inline";
+    document.getElementById("prezzo_" + id).style.display = "inline";
+    document.getElementById("input_nome_" + id).style.display = "none";
+    document.getElementById("input_um_" + id).style.display = "none";
+    document.getElementById("input_prezzo_" + id).style.display = "none";
+    document.getElementById("btn_modifica_" + id).style.display = "inline";
+    document.getElementById("btn_salva_" + id).style.display = "none";
+    document.getElementById("btn_annulla_" + id).style.display = "none";
+}
+
+function salvaProdotto(id) {
+    const nome = document.getElementById("input_nome_" + id).value;
+    const prezzo = document.getElementById("input_prezzo_" + id).value;
+    const um = document.getElementById("input_um_" + id).value;
+
+    fetch("/modifica_prodotto/" + id, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nome: nome, prezzo_base: parseFloat(prezzo), unita_misura: um })
+    }).then(r => r.json()).then(function(data) {
+        if (data.success) {
+            document.getElementById("nome_" + id).textContent = nome;
+            document.getElementById("um_" + id).textContent = um;
+            document.getElementById("prezzo_" + id).textContent = "€ " + parseFloat(prezzo).toFixed(2);
+            annullaProdotto(id);
+        }
     });
 }
 </script>
