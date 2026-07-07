@@ -238,9 +238,24 @@ def nuova_fattura():
     cur = db.cursor()
     cur.execute("SELECT * FROM clienti ORDER BY nome")
     clienti = cur.fetchall()
+
+    # Genera numero fattura automatico YYYY/NNN
+    from datetime import datetime
+    anno = datetime.now().year
+    cur.execute(
+        "SELECT numero FROM fatture WHERE numero LIKE %s ORDER BY numero DESC LIMIT 1",
+        (f"{anno}/%",)
+    )
+    ultima = cur.fetchone()
+    if ultima:
+        ultimo_num = int(ultima["numero"].split("/")[1])
+        prossimo_numero = f"{anno}/{str(ultimo_num + 1).zfill(3)}"
+    else:
+        prossimo_numero = f"{anno}/001"
+
     cur.close()
     return_db(db)
-    return render_template("nuova_fattura.html", clienti=clienti)
+    return render_template("nuova_fattura.html", clienti=clienti, prossimo_numero=prossimo_numero)
 
 @app.route("/add_fattura", methods=["POST"])
 @login_required
