@@ -20,20 +20,41 @@
             </div>
             <div class="form-group">
                 <label>Data *</label>
-                <input type="date" name="data" required>
+                <input type="date" name="data" id="data_fattura" required>
             </div>
         </div>
 
         <div class="form-group">
-            <label>Cliente *</label>
-            <div class="autocomplete-wrapper">
-                <input type="text"
-                       id="cliente_search"
-                       placeholder="Scrivi per cercare cliente..."
-                       autocomplete="off">
-                <div class="autocomplete-list" id="cliente_list"></div>
+            <label>
+                Cliente *
+                <button type="button" onclick="toggleVistaClienti()"
+                        style="margin-left:10px; font-size:11px; padding:2px 8px; border:1px solid #d0d5dd; border-radius:20px; background:white; cursor:pointer; color:#6b7280;">
+                    🔀 <span id="lbl_toggle_c">Vista bottoni</span>
+                </button>
+            </label>
+
+            <!-- VISTA RICERCA -->
+            <div id="vista_ricerca_c">
+                <div class="autocomplete-wrapper">
+                    <input type="text" id="cliente_search" placeholder="Scrivi per cercare cliente..." autocomplete="off">
+                    <div class="autocomplete-list" id="cliente_list"></div>
+                </div>
             </div>
+
+            <!-- VISTA BOTTONI -->
+            <div id="vista_bottoni_c" style="display:none; display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; display:none;">
+                {% for c in clienti %}
+                <button type="button"
+                        onclick="selezionaCliente({{ c.id }}, {{ c.nome | tojson }})"
+                        id="btn_c_{{ c.id }}"
+                        style="padding:8px 14px; border:1px solid #d0d5dd; border-radius:8px; background:white; cursor:pointer; font-size:13px; color:#1a1a2e; transition:all 0.15s;">
+                    {{ c.nome }}
+                </button>
+                {% endfor %}
+            </div>
+
             <input type="hidden" name="cliente_id" id="cliente_id">
+            <div id="cliente_selezionato" style="margin-top:6px; font-size:13px; color:#059669; font-weight:600; display:none;"></div>
         </div>
 
         <div class="form-row">
@@ -72,22 +93,50 @@
 </div>
 
 <script>
+// Imposta data di oggi
+document.getElementById("data_fattura").valueAsDate = new Date();
+
 function toggleIva() {
     const tipo = document.getElementById("tipo").value;
     const ivaSelect = document.getElementById("regime_iva");
-    if (tipo === "FORNITURA") {
-        ivaSelect.value = "22";
-        ivaSelect.disabled = true;
-    } else {
-        ivaSelect.disabled = false;
+    ivaSelect.disabled = tipo === "FORNITURA";
+    if (tipo === "FORNITURA") ivaSelect.value = "22";
+}
+
+// Toggle vista clienti
+let vistaBottoniC = false;
+function toggleVistaClienti() {
+    vistaBottoniC = !vistaBottoniC;
+    document.getElementById("vista_ricerca_c").style.display = vistaBottoniC ? "none" : "block";
+    document.getElementById("vista_bottoni_c").style.display = vistaBottoniC ? "flex" : "none";
+    document.getElementById("lbl_toggle_c").textContent = vistaBottoniC ? "Vista ricerca" : "Vista bottoni";
+    // Reset selezione
+    document.getElementById("cliente_id").value = "";
+    document.getElementById("cliente_search").value = "";
+    document.getElementById("cliente_selezionato").style.display = "none";
+    document.querySelectorAll("[id^='btn_c_']").forEach(b => b.style.background = "white");
+}
+
+function selezionaCliente(id, nome) {
+    document.getElementById("cliente_id").value = id;
+    const info = document.getElementById("cliente_selezionato");
+    info.textContent = "✓ " + nome;
+    info.style.display = "block";
+    // Evidenzia bottone selezionato
+    document.querySelectorAll("[id^='btn_c_']").forEach(b => {
+        b.style.background = "white";
+        b.style.borderColor = "#d0d5dd";
+        b.style.color = "#1a1a2e";
+    });
+    const btn = document.getElementById("btn_c_" + id);
+    if (btn) {
+        btn.style.background = "#1a1a2e";
+        btn.style.borderColor = "#1a1a2e";
+        btn.style.color = "white";
     }
 }
 
-window.onload = function() {
-    toggleIva();
-    setupAutocomplete();
-}
-
+// Autocomplete clienti (vista ricerca)
 function setupAutocomplete() {
     const input = document.getElementById("cliente_search");
     const hiddenInput = document.getElementById("cliente_id");
@@ -107,6 +156,9 @@ function setupAutocomplete() {
             div.addEventListener("click", function() {
                 input.value = c.nome;
                 hiddenInput.value = c.id;
+                const info = document.getElementById("cliente_selezionato");
+                info.textContent = "✓ " + c.nome;
+                info.style.display = "block";
                 list.style.display = "none";
             });
             list.appendChild(div);
@@ -115,18 +167,21 @@ function setupAutocomplete() {
     });
 
     document.addEventListener("click", function(e) {
-        if (!input.contains(e.target) && !list.contains(e.target)) {
-            list.style.display = "none";
-        }
+        if (!input.contains(e.target) && !list.contains(e.target)) list.style.display = "none";
     });
 }
 
 function validateForm() {
     if (!document.getElementById("cliente_id").value) {
-        alert("Seleziona un cliente dalla lista.");
+        alert("Seleziona un cliente.");
         return false;
     }
     return true;
+}
+
+window.onload = function() {
+    toggleIva();
+    setupAutocomplete();
 }
 </script>
 
