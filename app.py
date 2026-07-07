@@ -239,19 +239,18 @@ def nuova_fattura():
     cur.execute("SELECT * FROM clienti ORDER BY nome")
     clienti = cur.fetchall()
 
-    # Genera numero fattura automatico YYYY/NNN
-    from datetime import datetime
-    anno = datetime.now().year
-    cur.execute(
-        "SELECT numero FROM fatture WHERE numero LIKE %s ORDER BY numero DESC LIMIT 1",
-        (f"{anno}/%",)
-    )
+    # Genera numero fattura automatico — solo numero progressivo
+    cur.execute("SELECT numero FROM fatture ORDER BY id DESC LIMIT 1")
     ultima = cur.fetchone()
     if ultima:
-        ultimo_num = int(ultima["numero"].split("/")[1])
-        prossimo_numero = f"{anno}/{str(ultimo_num + 1).zfill(3)}"
+        try:
+            # Funziona sia con "2026/043" che con "43"
+            ultimo_num = int(ultima["numero"].split("/")[-1])
+            prossimo_numero = str(ultimo_num + 1)
+        except:
+            prossimo_numero = "1"
     else:
-        prossimo_numero = f"{anno}/001"
+        prossimo_numero = "1"
 
     cur.close()
     return_db(db)
