@@ -116,15 +116,21 @@ function salvaNuovoProdotto(nome, ddt_id) {
 
 <!-- INFO FATTURA -->
 <div class="card">
-    <div class="form-row" style="flex-wrap:wrap; gap:1.5rem;">
+    <div class="form-row" style="flex-wrap:wrap; gap:1.5rem; align-items:flex-end;">
         <div>
             <div style="font-size:12px; color:#6b7280; margin-bottom:3px;">Cliente</div>
             <div style="font-weight:600;">{{ fattura.cliente_nome }}</div>
             <div style="font-size:13px; color:#6b7280;">{{ fattura.indirizzo }}</div>
         </div>
-        <div>
-            <div style="font-size:12px; color:#6b7280; margin-bottom:3px;">Data</div>
-            <div style="font-weight:500;">{{ fattura.data }}</div>
+        <div class="form-group" style="margin-bottom:0; min-width:120px;">
+            <label style="font-size:12px; color:#6b7280;">Numero fattura</label>
+            <input type="text" id="edit_numero" value="{{ fattura.numero }}"
+                   style="width:100%; padding:5px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px; font-weight:600;">
+        </div>
+        <div class="form-group" style="margin-bottom:0; min-width:140px;">
+            <label style="font-size:12px; color:#6b7280;">Data fattura</label>
+            <input type="date" id="edit_data" value="{{ fattura.data }}"
+                   style="width:100%; padding:5px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px;">
         </div>
         <div>
             <div style="font-size:12px; color:#6b7280; margin-bottom:3px;">Tipo</div>
@@ -135,7 +141,7 @@ function salvaNuovoProdotto(nome, ddt_id) {
             {% endif %}
         </div>
         <div>
-            <div style="font-size:12px; color:#6b7280; margin-bottom:3px;">Stato fattura</div>
+            <div style="font-size:12px; color:#6b7280; margin-bottom:3px;">Stato</div>
             {% if fattura.stato == "CHIUSA" %}
             <span class="badge badge-chiusa">Chiusa</span>
             {% else %}
@@ -145,6 +151,10 @@ function salvaNuovoProdotto(nome, ddt_id) {
         <div>
             <div style="font-size:12px; color:#6b7280; margin-bottom:3px;">IVA</div>
             <div style="font-weight:500;">{{ fattura.regime_iva }}%</div>
+        </div>
+        <div style="display:flex; align-items:flex-end; padding-bottom:2px; gap:8px;">
+            <button onclick="salvaTestataFattura()" class="btn btn-primary btn-sm">Salva</button>
+            <span id="msg_testata" style="display:none; color:#059669; font-size:12px; font-weight:600;">✓</span>
         </div>
     </div>
 
@@ -272,25 +282,105 @@ function salvaFattura() {
     </table>
 
     {% if fattura.stato == "BOZZA" %}
-    <form method="POST" action="/add_riga_prodotto">
+    <form method="POST" action="/add_riga_prodotto" id="form_ddt_{{ ddt.id }}">
         <input type="hidden" name="fattura_id" value="{{ fattura.id }}">
         <input type="hidden" name="ddt_id" value="{{ ddt.id }}">
         <input type="hidden" name="prodotto_id" id="prodotto_id_{{ ddt.id }}">
-        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+
+        <!-- TOGGLE -->
+        <div style="margin-bottom:8px;">
+            <button type="button" onclick="toggleVistaProdotti({{ ddt.id }})"
+                    style="font-size:11px; padding:2px 10px; border:1px solid #d0d5dd; border-radius:20px; background:white; cursor:pointer; color:#6b7280;">
+                🔀 <span id="lbl_toggle_p_{{ ddt.id }}">Vista bottoni</span>
+            </button>
+        </div>
+
+        <!-- VISTA RICERCA -->
+        <div id="vista_ricerca_p_{{ ddt.id }}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
             <div class="autocomplete-wrapper">
                 <input type="text" id="prodotto_search_{{ ddt.id }}" placeholder="Cerca prodotto..." autocomplete="off">
                 <div class="autocomplete-list" id="prodotto_list_{{ ddt.id }}"></div>
             </div>
-            <input type="number" name="quantita" step="0.01" placeholder="Q.tà" required style="width:80px; padding:5px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px;">
+            <input type="number" name="quantita" id="qty_{{ ddt.id }}" step="0.01" placeholder="Q.tà" required style="width:80px; padding:5px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px;">
             <span id="prodotto_um_{{ ddt.id }}" style="font-size:13px; color:#6b7280; min-width:30px;"></span>
             <input type="number" name="prezzo_override" id="prodotto_prezzo_{{ ddt.id }}" step="0.01" placeholder="Prezzo/u." style="width:90px; padding:5px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px;">
             <button type="submit" class="btn btn-primary btn-sm"
-                    onclick="return document.getElementById('prodotto_id_{{ ddt.id }}').value !== '' || (alert('Seleziona un prodotto dalla lista.'), false)">
+                    onclick="return document.getElementById('prodotto_id_{{ ddt.id }}').value !== '' || (alert('Seleziona un prodotto.'), false)">
                 + Aggiungi
             </button>
         </div>
+
+        <!-- VISTA BOTTONI -->
+        <div id="vista_bottoni_p_{{ ddt.id }}" style="display:none; flex-wrap:wrap; gap:8px;">
+            {% for p in prodotti %}
+            <button type="button"
+                    onclick="selezionaProdotto({{ ddt.id }}, {{ p.id }}, {{ p.prezzo_base }}, {{ p.unita_misura | tojson }})"
+                    id="btn_p_{{ ddt.id }}_{{ p.id }}"
+                    style="padding:7px 12px; border:1px solid #d0d5dd; border-radius:8px; background:white; cursor:pointer; font-size:12px; color:#1a1a2e; transition:all 0.15s;">
+                {{ p.nome }}<br>
+                <span style="font-size:11px; color:#6b7280;">€{{ "%.2f"|format(p.prezzo_base) }} / {{ p.unita_misura }}</span>
+            </button>
+            {% endfor %}
+        </div>
+
+        <!-- QUANTITA E PREZZO (mostrati sempre in vista bottoni dopo selezione) -->
+        <div id="qty_box_{{ ddt.id }}" style="display:none; margin-top:10px; gap:8px; align-items:center; flex-wrap:wrap;">
+            <span id="prodotto_selezionato_{{ ddt.id }}" style="font-size:13px; font-weight:600; color:#1a1a2e;"></span>
+            <input type="number" name="quantita_btn" id="qty_btn_{{ ddt.id }}" step="0.01" placeholder="Q.tà" style="width:80px; padding:5px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px;">
+            <span id="um_btn_{{ ddt.id }}" style="font-size:13px; color:#6b7280;"></span>
+            <input type="number" id="prezzo_btn_{{ ddt.id }}" step="0.01" placeholder="Prezzo/u." style="width:90px; padding:5px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px;">
+            <button type="button" onclick="aggiungiDaBotone({{ ddt.id }})" class="btn btn-primary btn-sm">+ Aggiungi</button>
+        </div>
+
     </form>
-    <script>setupProdottoAutocomplete({{ ddt.id }});</script>
+    <script>
+    setupProdottoAutocomplete({{ ddt.id }});
+
+    function toggleVistaProdotti(ddt_id) {
+        const ricerca = document.getElementById("vista_ricerca_p_" + ddt_id);
+        const bottoni = document.getElementById("vista_bottoni_p_" + ddt_id);
+        const lbl = document.getElementById("lbl_toggle_p_" + ddt_id);
+        const isBottoni = bottoni.style.display === "flex";
+        ricerca.style.display = isBottoni ? "flex" : "none";
+        bottoni.style.display = isBottoni ? "none" : "flex";
+        lbl.textContent = isBottoni ? "Vista bottoni" : "Vista ricerca";
+        document.getElementById("prodotto_id_" + ddt_id).value = "";
+        document.getElementById("qty_box_" + ddt_id).style.display = "none";
+    }
+
+    function selezionaProdotto(ddt_id, prod_id, prezzo, um) {
+        document.getElementById("prodotto_id_" + ddt_id).value = prod_id;
+        document.getElementById("prezzo_btn_" + ddt_id).value = prezzo;
+        document.getElementById("um_btn_" + ddt_id).textContent = um;
+        document.getElementById("qty_btn_" + ddt_id).value = "";
+        document.getElementById("qty_box_" + ddt_id).style.display = "flex";
+        // Evidenzia bottone selezionato
+        document.querySelectorAll("[id^='btn_p_{{ ddt.id }}_']").forEach(b => {
+            b.style.background = "white";
+            b.style.borderColor = "#d0d5dd";
+        });
+        document.getElementById("btn_p_" + ddt_id + "_" + prod_id).style.background = "#1a1a2e";
+        document.getElementById("btn_p_" + ddt_id + "_" + prod_id).style.color = "white";
+        document.getElementById("btn_p_" + ddt_id + "_" + prod_id).style.borderColor = "#1a1a2e";
+    }
+
+    function aggiungiDaBotone(ddt_id) {
+        const qty = document.getElementById("qty_btn_" + ddt_id).value;
+        const prezzo = document.getElementById("prezzo_btn_" + ddt_id).value;
+        if (!qty) { alert("Inserisci la quantità."); return; }
+        // Copia i valori nel form e invia
+        document.getElementById("qty_" + ddt_id) && (document.getElementById("qty_" + ddt_id).removeAttribute("required"));
+        const form = document.getElementById("form_ddt_" + ddt_id);
+        // Aggiungi campi nascosti temporanei
+        let qInput = document.createElement("input");
+        qInput.type = "hidden"; qInput.name = "quantita"; qInput.value = qty;
+        form.appendChild(qInput);
+        let pInput = document.createElement("input");
+        pInput.type = "hidden"; pInput.name = "prezzo_override"; pInput.value = prezzo;
+        form.appendChild(pInput);
+        form.submit();
+    }
+    </script>
     {% endif %}
 </div>
 {% endfor %}
