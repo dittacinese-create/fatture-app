@@ -252,9 +252,11 @@ def nuova_fattura():
     else:
         prossimo_numero = "1"
 
+    from datetime import datetime, date
+    oggi = date.today().isoformat()
     cur.close()
     return_db(db)
-    return render_template("nuova_fattura.html", clienti=clienti, prossimo_numero=prossimo_numero)
+    return render_template("nuova_fattura.html", clienti=clienti, prossimo_numero=prossimo_numero, oggi=oggi)
 
 @app.route("/add_fattura", methods=["POST"])
 @login_required
