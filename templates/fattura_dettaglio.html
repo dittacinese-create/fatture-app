@@ -189,6 +189,23 @@ function salvaNuovoProdotto(nome, ddt_id) {
 </div>
 
 <script>
+function salvaTestataFattura() {
+    fetch("/aggiorna_testata/{{ fattura.id }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            numero: document.getElementById("edit_numero").value,
+            data: document.getElementById("edit_data").value
+        })
+    }).then(r => r.json()).then(function(data) {
+        if (data.success) {
+            const msg = document.getElementById("msg_testata");
+            msg.style.display = "inline";
+            setTimeout(function() { msg.style.display = "none"; }, 2000);
+        }
+    });
+}
+
 function salvaFattura() {
     const data = {
         stato_pagamento: document.getElementById("stato_pagamento").value,
@@ -367,17 +384,40 @@ function salvaFattura() {
     function aggiungiDaBotone(ddt_id) {
         const qty = document.getElementById("qty_btn_" + ddt_id).value;
         const prezzo = document.getElementById("prezzo_btn_" + ddt_id).value;
-        if (!qty) { alert("Inserisci la quantità."); return; }
-        // Copia i valori nel form e invia
-        document.getElementById("qty_" + ddt_id) && (document.getElementById("qty_" + ddt_id).removeAttribute("required"));
+        const prod_id = document.getElementById("prodotto_id_" + ddt_id).value;
+        if (!prod_id) { alert("Seleziona un prodotto."); return; }
+        if (!qty || parseFloat(qty) <= 0) { alert("Inserisci la quantità."); return; }
+
         const form = document.getElementById("form_ddt_" + ddt_id);
-        // Aggiungi campi nascosti temporanei
-        let qInput = document.createElement("input");
-        qInput.type = "hidden"; qInput.name = "quantita"; qInput.value = qty;
+
+        // Rimuovi eventuali campi nascosti precedenti
+        ["_qty_hidden", "_prezzo_hidden"].forEach(function(suffix) {
+            const old = form.querySelector("[data-temp='" + ddt_id + suffix + "']");
+            if (old) old.remove();
+        });
+
+        // Aggiungi quantita
+        const qInput = document.createElement("input");
+        qInput.type = "hidden";
+        qInput.name = "quantita";
+        qInput.value = qty;
+        qInput.setAttribute("data-temp", ddt_id + "_qty_hidden");
         form.appendChild(qInput);
-        let pInput = document.createElement("input");
-        pInput.type = "hidden"; pInput.name = "prezzo_override"; pInput.value = prezzo;
-        form.appendChild(pInput);
+
+        // Aggiungi prezzo override se presente
+        if (prezzo) {
+            const pInput = document.createElement("input");
+            pInput.type = "hidden";
+            pInput.name = "prezzo_override";
+            pInput.value = prezzo;
+            pInput.setAttribute("data-temp", ddt_id + "_prezzo_hidden");
+            form.appendChild(pInput);
+        }
+
+        // Disabilita il campo quantita della vista ricerca per evitare conflitti
+        const qRicerca = document.getElementById("qty_" + ddt_id);
+        if (qRicerca) qRicerca.removeAttribute("required");
+
         form.submit();
     }
     </script>
