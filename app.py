@@ -287,6 +287,35 @@ def add_fattura():
     return_db(db)
     return redirect(f"/fattura/{fattura_id}")
 
+@app.route("/aggiorna_ddt/<int:id>", methods=["POST"])
+@login_required
+def aggiorna_ddt(id):
+    data = request.get_json()
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("UPDATE ddt SET numero=%s, data=%s WHERE id=%s",
+        (data.get("numero"), data.get("data"), id))
+    db.commit()
+    cur.close()
+    return_db(db)
+    return jsonify({"success": True})
+
+@app.route("/aggiorna_riga_ddt/<int:id>", methods=["POST"])
+@login_required
+def aggiorna_riga_ddt(id):
+    data = request.get_json()
+    qty = float(data.get("quantita", 0))
+    prezzo = float(data.get("prezzo", 0))
+    totale = round(qty * prezzo, 2)
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("UPDATE righe_ddt SET quantita=%s, prezzo=%s, totale=%s WHERE id=%s",
+        (qty, prezzo, totale, id))
+    db.commit()
+    cur.close()
+    return_db(db)
+    return jsonify({"success": True})
+
 @app.route("/aggiorna_testata/<int:id>", methods=["POST"])
 @login_required
 def aggiorna_testata(id):

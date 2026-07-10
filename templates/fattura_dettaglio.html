@@ -23,96 +23,8 @@
 .autocomplete-list div:hover { background:#f0f4ff; }
 .autocomplete-list .nuovo-prodotto { background:#fffbeb; color:#92400e; font-style:italic; border-top:1px solid #e8ecf0; }
 .autocomplete-list .nuovo-prodotto:hover { background:#fef3c7; }
+.campo-inline { padding:4px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px; }
 </style>
-
-<script>
-// Ricerca prodotti con autocomplete, mostra U.M. e suggerisce salvataggio nuovo prodotto
-function setupProdottoAutocomplete(ddt_id) {
-    const input = document.getElementById("prodotto_search_" + ddt_id);
-    const hiddenId = document.getElementById("prodotto_id_" + ddt_id);
-    const hiddenPrezzo = document.getElementById("prodotto_prezzo_" + ddt_id);
-    const umSpan = document.getElementById("prodotto_um_" + ddt_id);
-    const list = document.getElementById("prodotto_list_" + ddt_id);
-    const prodotti = JSON.parse(document.getElementById("prodotti_json").textContent);
-
-    input.addEventListener("input", function() {
-        const query = this.value.toLowerCase().trim();
-        list.innerHTML = "";
-        hiddenId.value = "";
-        hiddenPrezzo.value = "";
-        umSpan.textContent = "";
-
-        if (query.length === 0) { list.style.display = "none"; return; }
-
-        const filtrati = prodotti.filter(p => p.nome.toLowerCase().includes(query));
-
-        filtrati.forEach(function(p) {
-            const div = document.createElement("div");
-            div.textContent = p.nome + " — €" + p.prezzo_base.toFixed(2) + " /" + p.unita_misura;
-            div.addEventListener("click", function() {
-                input.value = p.nome;
-                hiddenId.value = p.id;
-                hiddenPrezzo.value = p.prezzo_base;
-                umSpan.textContent = p.unita_misura;
-                list.style.display = "none";
-            });
-            list.appendChild(div);
-        });
-
-        const esatto = prodotti.find(p => p.nome.toLowerCase() === query);
-        if (!esatto && query.length > 1) {
-            const divNuovo = document.createElement("div");
-            divNuovo.className = "nuovo-prodotto";
-            divNuovo.textContent = '+ Salva "' + input.value + '" come nuovo prodotto';
-            divNuovo.addEventListener("click", function() {
-                salvaNuovoProdotto(input.value, ddt_id);
-                list.style.display = "none";
-            });
-            list.appendChild(divNuovo);
-        }
-
-        list.style.display = (filtrati.length > 0 || query.length > 1) ? "block" : "none";
-    });
-
-    document.addEventListener("click", function(e) {
-        if (!input.contains(e.target) && !list.contains(e.target)) list.style.display = "none";
-    });
-}
-
-// Chiede prezzo e unità di misura, salva il nuovo prodotto via AJAX
-function salvaNuovoProdotto(nome, ddt_id) {
-    const prezzo = prompt('Prezzo unitario per "' + nome + '" (es. 35.00):');
-    if (prezzo === null || prezzo.trim() === "") return;
-    const prezzoNum = parseFloat(prezzo.replace(",", "."));
-    if (isNaN(prezzoNum)) { alert("Prezzo non valido."); return; }
-
-    const um = prompt('Unità di misura per "' + nome + '" (mq, pz, gg, ml, qli):', "mq");
-    if (um === null || um.trim() === "") return;
-
-    fetch("/add_prodotto_ajax", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nome: nome, prezzo_base: prezzoNum, unita_misura: um.trim() })
-    })
-    .then(r => r.json())
-    .then(function(data) {
-        if (data.success) {
-            document.getElementById("prodotto_search_" + ddt_id).value = nome;
-            document.getElementById("prodotto_id_" + ddt_id).value = data.id;
-            document.getElementById("prodotto_prezzo_" + ddt_id).value = prezzoNum;
-            document.getElementById("prodotto_um_" + ddt_id).textContent = um.trim();
-
-            const json = JSON.parse(document.getElementById("prodotti_json").textContent);
-            json.push({ id: data.id, nome: nome, prezzo_base: prezzoNum, unita_misura: um.trim() });
-            document.getElementById("prodotti_json").textContent = JSON.stringify(json);
-
-            alert('"' + nome + '" salvato nel catalogo.');
-        } else {
-            alert("Errore nel salvataggio.");
-        }
-    });
-}
-</script>
 
 <!-- INFO FATTURA -->
 <div class="card">
@@ -124,13 +36,11 @@ function salvaNuovoProdotto(nome, ddt_id) {
         </div>
         <div class="form-group" style="margin-bottom:0; min-width:120px;">
             <label style="font-size:12px; color:#6b7280;">Numero fattura</label>
-            <input type="text" id="edit_numero" value="{{ fattura.numero }}"
-                   style="width:100%; padding:5px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px; font-weight:600;">
+            <input type="text" id="edit_numero" value="{{ fattura.numero }}" class="campo-inline" style="width:100%; font-weight:600;">
         </div>
         <div class="form-group" style="margin-bottom:0; min-width:140px;">
             <label style="font-size:12px; color:#6b7280;">Data fattura</label>
-            <input type="date" id="edit_data" value="{{ fattura.data }}"
-                   style="width:100%; padding:5px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px;">
+            <input type="date" id="edit_data" value="{{ fattura.data }}" class="campo-inline" style="width:100%;">
         </div>
         <div>
             <div style="font-size:12px; color:#6b7280; margin-bottom:3px;">Tipo</div>
@@ -153,81 +63,41 @@ function salvaNuovoProdotto(nome, ddt_id) {
             <div style="font-weight:500;">{{ fattura.regime_iva }}%</div>
         </div>
         <div style="display:flex; align-items:flex-end; padding-bottom:2px; gap:8px;">
-            <button onclick="salvaTestataFattura()" class="btn btn-primary btn-sm">Salva</button>
+            <button onclick="salvaTestataFattura()" class="btn btn-primary btn-sm" type="button">Salva</button>
             <span id="msg_testata" style="display:none; color:#059669; font-size:12px; font-weight:600;">✓</span>
         </div>
     </div>
 
-<!-- CAMPI PAGAMENTO, SCADENZA, NOTE — salvataggio automatico -->
-<div style="margin-top:1.2rem; border-top:1px solid #e8ecf0; padding-top:1.2rem;">
-    <div class="form-row" style="flex-wrap:wrap; align-items:flex-end;">
-        <div class="form-group" style="min-width:160px;">
-            <label>Stato pagamento</label>
-            <select id="stato_pagamento" onchange="salvaFattura()">
-                <option value="Non pagata" {% if fattura.stato_pagamento == "Non pagata" or not fattura.stato_pagamento %}selected{% endif %}>Non pagata</option>
-                <option value="In attesa" {% if fattura.stato_pagamento == "In attesa" %}selected{% endif %}>In attesa</option>
-                <option value="Pagata" {% if fattura.stato_pagamento == "Pagata" %}selected{% endif %}>Pagata</option>
-            </select>
-        </div>
-        <div class="form-group" style="min-width:160px;">
-            <label>Scadenza pagamento</label>
-            <input type="date" id="data_scadenza" value="{{ fattura.data_scadenza or '' }}" onchange="salvaFattura()">
-        </div>
-        <div class="form-group" style="min-width:160px;">
-            <label>Data pagamento</label>
-            <input type="date" id="data_pagamento" value="{{ fattura.data_pagamento or '' }}" onchange="salvaFattura()">
-        </div>
-        <div class="form-group" style="flex:2; min-width:200px;">
-            <label>Note / Cantiere</label>
-            <input type="text" id="note" value="{{ fattura.note or '' }}" placeholder="es. Cantiere di Torino" onblur="salvaFattura()">
-        </div>
-        <div style="padding-bottom:1rem; min-width:120px; display:flex; align-items:center; gap:0.75rem;">
-            <button onclick="salvaFattura()" class="btn btn-primary btn-sm" type="button">Salva</button>
-            <span id="salva_status" style="font-size:13px; color:#059669; font-weight:600; display:none;">✓ Salvato</span>
+    <!-- CAMPI PAGAMENTO -->
+    <div style="margin-top:1.2rem; border-top:1px solid #e8ecf0; padding-top:1.2rem;">
+        <div class="form-row" style="flex-wrap:wrap; align-items:flex-end;">
+            <div class="form-group" style="min-width:160px;">
+                <label>Stato pagamento</label>
+                <select id="stato_pagamento">
+                    <option value="Non pagata" {% if fattura.stato_pagamento == "Non pagata" or not fattura.stato_pagamento %}selected{% endif %}>Non pagata</option>
+                    <option value="In attesa" {% if fattura.stato_pagamento == "In attesa" %}selected{% endif %}>In attesa</option>
+                    <option value="Pagata" {% if fattura.stato_pagamento == "Pagata" %}selected{% endif %}>Pagata</option>
+                </select>
+            </div>
+            <div class="form-group" style="min-width:160px;">
+                <label>Scadenza pagamento</label>
+                <input type="date" id="data_scadenza" value="{{ fattura.data_scadenza or '' }}">
+            </div>
+            <div class="form-group" style="min-width:160px;">
+                <label>Data pagamento</label>
+                <input type="date" id="data_pagamento" value="{{ fattura.data_pagamento or '' }}">
+            </div>
+            <div class="form-group" style="flex:2; min-width:200px;">
+                <label>Note / Cantiere</label>
+                <input type="text" id="note" value="{{ fattura.note or '' }}" placeholder="es. Cantiere di Torino">
+            </div>
+            <div style="padding-bottom:1rem; display:flex; align-items:center; gap:0.75rem;">
+                <button onclick="salvaFattura()" class="btn btn-primary btn-sm" type="button">Salva</button>
+                <span id="salva_status" style="font-size:13px; color:#059669; font-weight:600; display:none;">✓ Salvato</span>
+            </div>
         </div>
     </div>
 </div>
-
-<script>
-function salvaTestataFattura() {
-    fetch("/aggiorna_testata/{{ fattura.id }}", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            numero: document.getElementById("edit_numero").value,
-            data: document.getElementById("edit_data").value
-        })
-    }).then(r => r.json()).then(function(data) {
-        if (data.success) {
-            const msg = document.getElementById("msg_testata");
-            msg.style.display = "inline";
-            setTimeout(function() { msg.style.display = "none"; }, 2000);
-        }
-    });
-}
-
-function salvaFattura() {
-    const data = {
-        stato_pagamento: document.getElementById("stato_pagamento").value,
-        data_scadenza: document.getElementById("data_scadenza").value || null,
-        data_pagamento: document.getElementById("data_pagamento").value || null,
-        note: document.getElementById("note").value || null
-    };
-    fetch("/aggiorna_fattura_ajax/{{ fattura.id }}", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data)
-    })
-    .then(r => r.json())
-    .then(function(res) {
-        if (res.success) {
-            const status = document.getElementById("salva_status");
-            status.style.display = "inline";
-            setTimeout(() => { status.style.display = "none"; }, 2000);
-        }
-    });
-}
-</script>
 
 <!-- DDT (FORNITURA) -->
 {% if fattura.tipo == "FORNITURA" %}
@@ -257,12 +127,20 @@ function salvaFattura() {
 {% for ddt in ddt_list %}
 <div class="ddt-block">
     <h3>
-        <span>DDT n. {{ ddt.numero }} del {{ ddt.data }}</span>
-        {% if fattura.stato == "BOZZA" %}
+        <!-- Numero e data DDT modificabili -->
+        <span style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            DDT n.
+            <input type="text" id="ddt_numero_{{ ddt.id }}" value="{{ ddt.numero }}"
+                   class="campo-inline" style="width:60px;">
+            del
+            <input type="date" id="ddt_data_{{ ddt.id }}" value="{{ ddt.data }}"
+                   class="campo-inline">
+            <button onclick="salvaDDT({{ ddt.id }})" class="btn btn-primary btn-sm" type="button">Salva</button>
+            <span id="msg_ddt_{{ ddt.id }}" style="display:none; color:#059669; font-size:12px; font-weight:600;">✓</span>
+        </span>
         <a href="/delete_ddt/{{ ddt.id }}/{{ fattura.id }}"
            onclick="return confirm('Eliminare DDT {{ ddt.numero }}?')"
            class="action-link danger btn-sm">Elimina DDT</a>
-        {% endif %}
     </h3>
 
     <table style="margin-bottom:0.75rem;">
@@ -273,155 +151,96 @@ function salvaFattura() {
                 <th>U.M.</th>
                 <th>Prezzo/u.</th>
                 <th>Totale</th>
-                {% if fattura.stato == "BOZZA" %}<th></th>{% endif %}
+                <th></th>
             </tr>
         </thead>
         <tbody>
             {% for r in righe_ddt %}
             {% if r.ddt_id == ddt.id %}
-            <tr>
+            <tr id="riga_ddt_{{ r.id }}">
                 <td>{{ r.descrizione }}</td>
-                <td>{{ r.quantita }}</td>
-                <td>{{ r.unita_misura }}</td>
-                <td>€ {{ "%.2f"|format(r.prezzo) }}</td>
-                <td>€ {{ "%.2f"|format(r.totale) }}</td>
-                {% if fattura.stato == "BOZZA" %}
                 <td>
+                    <span id="span_qty_{{ r.id }}">{{ r.quantita }}</span>
+                    <input id="inp_qty_{{ r.id }}" type="number" step="0.01" value="{{ r.quantita }}"
+                           class="campo-inline" style="width:70px; display:none;">
+                </td>
+                <td>{{ r.unita_misura }}</td>
+                <td>
+                    <span id="span_prezzo_{{ r.id }}">€ {{ "%.2f"|format(r.prezzo) }}</span>
+                    <input id="inp_prezzo_{{ r.id }}" type="number" step="0.01" value="{{ r.prezzo }}"
+                           class="campo-inline" style="width:80px; display:none;">
+                </td>
+                <td id="span_totale_{{ r.id }}">€ {{ "%.2f"|format(r.totale) }}</td>
+                <td style="white-space:nowrap;">
+                    <a onclick="modificaRigaDDT({{ r.id }})" id="btn_mod_{{ r.id }}" class="action-link" style="cursor:pointer;">Modifica</a>
+                    <a onclick="salvaRigaDDT({{ r.id }}, {{ fattura.id }})" id="btn_salva_{{ r.id }}" class="action-link" style="cursor:pointer; display:none; color:#059669;">Salva</a>
+                    &nbsp;·&nbsp;
                     <a href="/delete_riga_ddt/{{ r.id }}/{{ fattura.id }}"
                        onclick="return confirm('Eliminare riga?')"
                        class="action-link danger">Elimina</a>
                 </td>
-                {% endif %}
             </tr>
             {% endif %}
             {% endfor %}
         </tbody>
     </table>
 
-    {% if fattura.stato == "BOZZA" %}
-    <form method="POST" action="/add_riga_prodotto" id="form_ddt_{{ ddt.id }}">
-        <input type="hidden" name="fattura_id" value="{{ fattura.id }}">
-        <input type="hidden" name="ddt_id" value="{{ ddt.id }}">
-        <input type="hidden" name="prodotto_id" id="prodotto_id_{{ ddt.id }}">
+    <!-- AGGIUNGI PRODOTTO CON TOGGLE -->
+    <div style="margin-top:8px;">
+        <button type="button" onclick="toggleVistaProdotti({{ ddt.id }})"
+                style="font-size:11px; padding:2px 10px; border:1px solid #d0d5dd; border-radius:20px; background:white; cursor:pointer; color:#6b7280; margin-bottom:8px;">
+            🔀 <span id="lbl_toggle_{{ ddt.id }}">Vista bottoni</span>
+        </button>
 
-        <!-- TOGGLE -->
-        <div style="margin-bottom:8px;">
-            <button type="button" onclick="toggleVistaProdotti({{ ddt.id }})"
-                    style="font-size:11px; padding:2px 10px; border:1px solid #d0d5dd; border-radius:20px; background:white; cursor:pointer; color:#6b7280;">
-                🔀 <span id="lbl_toggle_p_{{ ddt.id }}">Vista bottoni</span>
-            </button>
-        </div>
+        <!-- FORM UNICO per aggiungere prodotto -->
+        <form method="POST" action="/add_riga_prodotto" id="form_prod_{{ ddt.id }}">
+            <input type="hidden" name="fattura_id" value="{{ fattura.id }}">
+            <input type="hidden" name="ddt_id" value="{{ ddt.id }}">
+            <input type="hidden" name="prodotto_id" id="prod_id_{{ ddt.id }}">
+            <input type="hidden" name="quantita" id="qty_hidden_{{ ddt.id }}">
+            <input type="hidden" name="prezzo_override" id="prezzo_hidden_{{ ddt.id }}">
 
-        <!-- VISTA RICERCA -->
-        <div id="vista_ricerca_p_{{ ddt.id }}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-            <div class="autocomplete-wrapper">
-                <input type="text" id="prodotto_search_{{ ddt.id }}" placeholder="Cerca prodotto..." autocomplete="off">
-                <div class="autocomplete-list" id="prodotto_list_{{ ddt.id }}"></div>
+            <!-- VISTA RICERCA -->
+            <div id="vista_ricerca_{{ ddt.id }}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <div class="autocomplete-wrapper">
+                    <input type="text" id="prod_search_{{ ddt.id }}" placeholder="Cerca prodotto..." autocomplete="off">
+                    <div class="autocomplete-list" id="prod_list_{{ ddt.id }}"></div>
+                </div>
+                <input type="number" step="0.01" placeholder="Q.tà" id="qty_ricerca_{{ ddt.id }}"
+                       class="campo-inline" style="width:80px;">
+                <span id="um_ricerca_{{ ddt.id }}" style="font-size:13px; color:#6b7280;"></span>
+                <input type="number" step="0.01" placeholder="Prezzo/u." id="prezzo_ricerca_{{ ddt.id }}"
+                       class="campo-inline" style="width:90px;">
+                <button type="button" onclick="submitProdotto({{ ddt.id }})" class="btn btn-primary btn-sm">+ Aggiungi</button>
             </div>
-            <input type="number" name="quantita" id="qty_{{ ddt.id }}" step="0.01" placeholder="Q.tà" required style="width:80px; padding:5px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px;">
-            <span id="prodotto_um_{{ ddt.id }}" style="font-size:13px; color:#6b7280; min-width:30px;"></span>
-            <input type="number" name="prezzo_override" id="prodotto_prezzo_{{ ddt.id }}" step="0.01" placeholder="Prezzo/u." style="width:90px; padding:5px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px;">
-            <button type="submit" class="btn btn-primary btn-sm"
-                    onclick="return document.getElementById('prodotto_id_{{ ddt.id }}').value !== '' || (alert('Seleziona un prodotto.'), false)">
-                + Aggiungi
-            </button>
-        </div>
 
-        <!-- VISTA BOTTONI -->
-        <div id="vista_bottoni_p_{{ ddt.id }}" style="display:none; flex-wrap:wrap; gap:8px;">
-            {% for p in prodotti %}
-            <button type="button"
-                    onclick="selezionaProdotto({{ ddt.id }}, {{ p.id }}, {{ p.prezzo_base }}, {{ p.unita_misura | tojson }})"
-                    id="btn_p_{{ ddt.id }}_{{ p.id }}"
-                    style="padding:7px 12px; border:1px solid #d0d5dd; border-radius:8px; background:white; cursor:pointer; font-size:12px; color:#1a1a2e; transition:all 0.15s;">
-                {{ p.nome }}<br>
-                <span style="font-size:11px; color:#6b7280;">€{{ "%.2f"|format(p.prezzo_base) }} / {{ p.unita_misura }}</span>
-            </button>
-            {% endfor %}
-        </div>
-
-        <!-- QUANTITA E PREZZO (mostrati sempre in vista bottoni dopo selezione) -->
-        <div id="qty_box_{{ ddt.id }}" style="display:none; margin-top:10px; gap:8px; align-items:center; flex-wrap:wrap;">
-            <span id="prodotto_selezionato_{{ ddt.id }}" style="font-size:13px; font-weight:600; color:#1a1a2e;"></span>
-            <input type="number" name="quantita_btn" id="qty_btn_{{ ddt.id }}" step="0.01" placeholder="Q.tà" style="width:80px; padding:5px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px;">
-            <span id="um_btn_{{ ddt.id }}" style="font-size:13px; color:#6b7280;"></span>
-            <input type="number" id="prezzo_btn_{{ ddt.id }}" step="0.01" placeholder="Prezzo/u." style="width:90px; padding:5px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px;">
-            <button type="button" onclick="aggiungiDaBotone({{ ddt.id }})" class="btn btn-primary btn-sm">+ Aggiungi</button>
-        </div>
-
-    </form>
-    <script>
-    setupProdottoAutocomplete({{ ddt.id }});
-
-    function toggleVistaProdotti(ddt_id) {
-        const ricerca = document.getElementById("vista_ricerca_p_" + ddt_id);
-        const bottoni = document.getElementById("vista_bottoni_p_" + ddt_id);
-        const lbl = document.getElementById("lbl_toggle_p_" + ddt_id);
-        const isBottoni = bottoni.style.display === "flex";
-        ricerca.style.display = isBottoni ? "flex" : "none";
-        bottoni.style.display = isBottoni ? "none" : "flex";
-        lbl.textContent = isBottoni ? "Vista bottoni" : "Vista ricerca";
-        document.getElementById("prodotto_id_" + ddt_id).value = "";
-        document.getElementById("qty_box_" + ddt_id).style.display = "none";
-    }
-
-    function selezionaProdotto(ddt_id, prod_id, prezzo, um) {
-        document.getElementById("prodotto_id_" + ddt_id).value = prod_id;
-        document.getElementById("prezzo_btn_" + ddt_id).value = prezzo;
-        document.getElementById("um_btn_" + ddt_id).textContent = um;
-        document.getElementById("qty_btn_" + ddt_id).value = "";
-        document.getElementById("qty_box_" + ddt_id).style.display = "flex";
-        // Evidenzia bottone selezionato
-        document.querySelectorAll("[id^='btn_p_{{ ddt.id }}_']").forEach(b => {
-            b.style.background = "white";
-            b.style.borderColor = "#d0d5dd";
-        });
-        document.getElementById("btn_p_" + ddt_id + "_" + prod_id).style.background = "#1a1a2e";
-        document.getElementById("btn_p_" + ddt_id + "_" + prod_id).style.color = "white";
-        document.getElementById("btn_p_" + ddt_id + "_" + prod_id).style.borderColor = "#1a1a2e";
-    }
-
-    function aggiungiDaBotone(ddt_id) {
-        const qty = document.getElementById("qty_btn_" + ddt_id).value;
-        const prezzo = document.getElementById("prezzo_btn_" + ddt_id).value;
-        const prod_id = document.getElementById("prodotto_id_" + ddt_id).value;
-        if (!prod_id) { alert("Seleziona un prodotto."); return; }
-        if (!qty || parseFloat(qty) <= 0) { alert("Inserisci la quantità."); return; }
-
-        const form = document.getElementById("form_ddt_" + ddt_id);
-
-        // Rimuovi eventuali campi nascosti precedenti
-        ["_qty_hidden", "_prezzo_hidden"].forEach(function(suffix) {
-            const old = form.querySelector("[data-temp='" + ddt_id + suffix + "']");
-            if (old) old.remove();
-        });
-
-        // Aggiungi quantita
-        const qInput = document.createElement("input");
-        qInput.type = "hidden";
-        qInput.name = "quantita";
-        qInput.value = qty;
-        qInput.setAttribute("data-temp", ddt_id + "_qty_hidden");
-        form.appendChild(qInput);
-
-        // Aggiungi prezzo override se presente
-        if (prezzo) {
-            const pInput = document.createElement("input");
-            pInput.type = "hidden";
-            pInput.name = "prezzo_override";
-            pInput.value = prezzo;
-            pInput.setAttribute("data-temp", ddt_id + "_prezzo_hidden");
-            form.appendChild(pInput);
-        }
-
-        // Disabilita il campo quantita della vista ricerca per evitare conflitti
-        const qRicerca = document.getElementById("qty_" + ddt_id);
-        if (qRicerca) qRicerca.removeAttribute("required");
-
-        form.submit();
-    }
-    </script>
-    {% endif %}
+            <!-- VISTA BOTTONI -->
+            <div id="vista_bottoni_{{ ddt.id }}" style="display:none;">
+                <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+                    {% for p in prodotti %}
+                    <button type="button"
+                            onclick="selezionaProdotto({{ ddt.id }}, {{ p.id }}, {{ p.prezzo_base }}, {{ p.unita_misura | tojson }})"
+                            id="btn_p_{{ ddt.id }}_{{ p.id }}"
+                            class="campo-inline"
+                            style="cursor:pointer; background:white; padding:8px 12px; border-radius:8px; font-size:12px; text-align:left;">
+                        <strong>{{ p.nome }}</strong><br>
+                        <span style="color:#6b7280; font-size:11px;">€{{ "%.2f"|format(p.prezzo_base) }} / {{ p.unita_misura }}</span>
+                    </button>
+                    {% endfor %}
+                </div>
+                <!-- Campi quantità dopo selezione -->
+                <div id="qty_box_{{ ddt.id }}" style="display:none; gap:8px; align-items:center; flex-wrap:wrap;">
+                    <span id="nome_sel_{{ ddt.id }}" style="font-size:13px; font-weight:600; color:#1a1a2e;"></span>
+                    <input type="number" step="0.01" placeholder="Q.tà" id="qty_btn_{{ ddt.id }}"
+                           class="campo-inline" style="width:80px;">
+                    <span id="um_btn_{{ ddt.id }}" style="font-size:13px; color:#6b7280;"></span>
+                    <input type="number" step="0.01" placeholder="Prezzo/u." id="prezzo_btn_{{ ddt.id }}"
+                           class="campo-inline" style="width:90px;">
+                    <button type="button" onclick="submitProdottoBottone({{ ddt.id }})" class="btn btn-primary btn-sm">+ Aggiungi</button>
+                </div>
+            </div>
+        </form>
+    </div>
 </div>
 {% endfor %}
 
@@ -475,7 +294,7 @@ function salvaFattura() {
                 <th>U.M.</th>
                 <th>Prezzo/u.</th>
                 <th>Totale riga</th>
-                {% if fattura.stato == "BOZZA" %}<th></th>{% endif %}
+                <th></th>
             </tr>
         </thead>
         <tbody>
@@ -486,25 +305,22 @@ function salvaFattura() {
                 <td>{{ r.unita_misura }}</td>
                 <td>€ {{ "%.2f"|format(r.prezzo) }}</td>
                 <td>€ {{ "%.2f"|format(r.totale) }}</td>
-                {% if fattura.stato == "BOZZA" %}
                 <td>
+                    {% if fattura.stato == "BOZZA" %}
                     <a href="/delete_riga_fattura/{{ r.id }}/{{ fattura.id }}"
                        onclick="return confirm('Eliminare riga?')"
                        class="action-link danger">Elimina</a>
+                    {% endif %}
                 </td>
-                {% endif %}
             </tr>
             {% else %}
             <tr>
-                <td colspan="6" style="text-align:center; color:#9ca3af; padding:1.5rem;">
-                    Nessuna riga aggiunta.
-                </td>
+                <td colspan="6" style="text-align:center; color:#9ca3af; padding:1.5rem;">Nessuna riga.</td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
-
 {% endif %}
 
 <!-- RIEPILOGO -->
@@ -532,26 +348,177 @@ function salvaFattura() {
 </div>
 
 <script>
-// Ricerca prodotti con autocomplete, mostra U.M. e suggerisce salvataggio nuovo prodotto
+// ========================
+// SALVA TESTATA FATTURA
+// ========================
+function salvaTestataFattura() {
+    fetch("/aggiorna_testata/{{ fattura.id }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            numero: document.getElementById("edit_numero").value,
+            data: document.getElementById("edit_data").value
+        })
+    }).then(r => r.json()).then(function(d) {
+        if (d.success) {
+            const msg = document.getElementById("msg_testata");
+            msg.style.display = "inline";
+            setTimeout(function() { msg.style.display = "none"; }, 2000);
+        }
+    });
+}
+
+// ========================
+// SALVA PAGAMENTO
+// ========================
+function salvaFattura() {
+    fetch("/aggiorna_fattura_ajax/{{ fattura.id }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            stato_pagamento: document.getElementById("stato_pagamento").value,
+            data_scadenza: document.getElementById("data_scadenza").value || null,
+            data_pagamento: document.getElementById("data_pagamento").value || null,
+            note: document.getElementById("note").value || null
+        })
+    }).then(r => r.json()).then(function(d) {
+        if (d.success) {
+            const s = document.getElementById("salva_status");
+            s.style.display = "inline";
+            setTimeout(function() { s.style.display = "none"; }, 2000);
+        }
+    });
+}
+
+// ========================
+// SALVA DDT (numero e data)
+// ========================
+function salvaDDT(ddt_id) {
+    fetch("/aggiorna_ddt/" + ddt_id, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            numero: document.getElementById("ddt_numero_" + ddt_id).value,
+            data: document.getElementById("ddt_data_" + ddt_id).value
+        })
+    }).then(r => r.json()).then(function(d) {
+        if (d.success) {
+            const msg = document.getElementById("msg_ddt_" + ddt_id);
+            msg.style.display = "inline";
+            setTimeout(function() { msg.style.display = "none"; }, 2000);
+        }
+    });
+}
+
+// ========================
+// MODIFICA RIGA DDT (quantità e prezzo)
+// ========================
+function modificaRigaDDT(id) {
+    document.getElementById("span_qty_" + id).style.display = "none";
+    document.getElementById("span_prezzo_" + id).style.display = "none";
+    document.getElementById("inp_qty_" + id).style.display = "inline-block";
+    document.getElementById("inp_prezzo_" + id).style.display = "inline-block";
+    document.getElementById("btn_mod_" + id).style.display = "none";
+    document.getElementById("btn_salva_" + id).style.display = "inline";
+}
+
+function salvaRigaDDT(id, fattura_id) {
+    const qty = parseFloat(document.getElementById("inp_qty_" + id).value);
+    const prezzo = parseFloat(document.getElementById("inp_prezzo_" + id).value);
+    fetch("/aggiorna_riga_ddt/" + id, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quantita: qty, prezzo: prezzo })
+    }).then(r => r.json()).then(function(d) {
+        if (d.success) {
+            const totale = (qty * prezzo).toFixed(2);
+            document.getElementById("span_qty_" + id).textContent = qty;
+            document.getElementById("span_prezzo_" + id).textContent = "€ " + parseFloat(prezzo).toFixed(2);
+            document.getElementById("span_totale_" + id).textContent = "€ " + totale;
+            document.getElementById("span_qty_" + id).style.display = "inline";
+            document.getElementById("span_prezzo_" + id).style.display = "inline";
+            document.getElementById("inp_qty_" + id).style.display = "none";
+            document.getElementById("inp_prezzo_" + id).style.display = "none";
+            document.getElementById("btn_mod_" + id).style.display = "inline";
+            document.getElementById("btn_salva_" + id).style.display = "none";
+        }
+    });
+}
+
+// ========================
+// TOGGLE VISTA PRODOTTI
+// ========================
+function toggleVistaProdotti(ddt_id) {
+    const ricerca = document.getElementById("vista_ricerca_" + ddt_id);
+    const bottoni = document.getElementById("vista_bottoni_" + ddt_id);
+    const lbl = document.getElementById("lbl_toggle_" + ddt_id);
+    const mostraBottoni = ricerca.style.display !== "none";
+    ricerca.style.display = mostraBottoni ? "none" : "flex";
+    bottoni.style.display = mostraBottoni ? "block" : "none";
+    lbl.textContent = mostraBottoni ? "Vista ricerca" : "Vista bottoni";
+    document.getElementById("prod_id_" + ddt_id).value = "";
+    document.getElementById("qty_box_" + ddt_id).style.display = "none";
+}
+
+// ========================
+// AGGIUNGI PRODOTTO - VISTA RICERCA
+// ========================
+function submitProdotto(ddt_id) {
+    const prod_id = document.getElementById("prod_id_" + ddt_id).value;
+    const qty = document.getElementById("qty_ricerca_" + ddt_id).value;
+    const prezzo = document.getElementById("prezzo_ricerca_" + ddt_id).value;
+    if (!prod_id) { alert("Seleziona un prodotto dalla lista."); return; }
+    if (!qty || parseFloat(qty) <= 0) { alert("Inserisci la quantità."); return; }
+    document.getElementById("qty_hidden_" + ddt_id).value = qty;
+    document.getElementById("prezzo_hidden_" + ddt_id).value = prezzo || "";
+    document.getElementById("form_prod_" + ddt_id).submit();
+}
+
+// ========================
+// AGGIUNGI PRODOTTO - VISTA BOTTONI
+// ========================
+function selezionaProdotto(ddt_id, prod_id, prezzo, um) {
+    document.getElementById("prod_id_" + ddt_id).value = prod_id;
+    document.getElementById("prezzo_btn_" + ddt_id).value = prezzo;
+    document.getElementById("um_btn_" + ddt_id).textContent = um;
+    document.getElementById("qty_btn_" + ddt_id).value = "";
+    document.getElementById("qty_box_" + ddt_id).style.display = "flex";
+    // Evidenzia bottone
+    document.querySelectorAll("[id^='btn_p_" + ddt_id + "_']").forEach(function(b) {
+        b.style.background = "white"; b.style.color = "#1a1a2e";
+    });
+    const btn = document.getElementById("btn_p_" + ddt_id + "_" + prod_id);
+    if (btn) { btn.style.background = "#1a1a2e"; btn.style.color = "white"; }
+}
+
+function submitProdottoBottone(ddt_id) {
+    const prod_id = document.getElementById("prod_id_" + ddt_id).value;
+    const qty = document.getElementById("qty_btn_" + ddt_id).value;
+    const prezzo = document.getElementById("prezzo_btn_" + ddt_id).value;
+    if (!prod_id) { alert("Seleziona un prodotto."); return; }
+    if (!qty || parseFloat(qty) <= 0) { alert("Inserisci la quantità."); return; }
+    document.getElementById("qty_hidden_" + ddt_id).value = qty;
+    document.getElementById("prezzo_hidden_" + ddt_id).value = prezzo || "";
+    document.getElementById("form_prod_" + ddt_id).submit();
+}
+
+// ========================
+// AUTOCOMPLETE PRODOTTI
+// ========================
 function setupProdottoAutocomplete(ddt_id) {
-    const input = document.getElementById("prodotto_search_" + ddt_id);
-    const hiddenId = document.getElementById("prodotto_id_" + ddt_id);
-    const hiddenPrezzo = document.getElementById("prodotto_prezzo_" + ddt_id);
-    const umSpan = document.getElementById("prodotto_um_" + ddt_id);
-    const list = document.getElementById("prodotto_list_" + ddt_id);
+    const input = document.getElementById("prod_search_" + ddt_id);
+    const hiddenId = document.getElementById("prod_id_" + ddt_id);
+    const hiddenUM = document.getElementById("um_ricerca_" + ddt_id);
+    const hiddenPrezzo = document.getElementById("prezzo_ricerca_" + ddt_id);
+    const list = document.getElementById("prod_list_" + ddt_id);
     const prodotti = JSON.parse(document.getElementById("prodotti_json").textContent);
 
     input.addEventListener("input", function() {
         const query = this.value.toLowerCase().trim();
         list.innerHTML = "";
         hiddenId.value = "";
-        hiddenPrezzo.value = "";
-        umSpan.textContent = "";
-
         if (query.length === 0) { list.style.display = "none"; return; }
-
         const filtrati = prodotti.filter(p => p.nome.toLowerCase().includes(query));
-
         filtrati.forEach(function(p) {
             const div = document.createElement("div");
             div.textContent = p.nome + " — €" + p.prezzo_base.toFixed(2) + " /" + p.unita_misura;
@@ -559,12 +526,11 @@ function setupProdottoAutocomplete(ddt_id) {
                 input.value = p.nome;
                 hiddenId.value = p.id;
                 hiddenPrezzo.value = p.prezzo_base;
-                umSpan.textContent = p.unita_misura;
+                hiddenUM.textContent = p.unita_misura;
                 list.style.display = "none";
             });
             list.appendChild(div);
         });
-
         const esatto = prodotti.find(p => p.nome.toLowerCase() === query);
         if (!esatto && query.length > 1) {
             const divNuovo = document.createElement("div");
@@ -576,48 +542,42 @@ function setupProdottoAutocomplete(ddt_id) {
             });
             list.appendChild(divNuovo);
         }
-
         list.style.display = (filtrati.length > 0 || query.length > 1) ? "block" : "none";
     });
-
     document.addEventListener("click", function(e) {
         if (!input.contains(e.target) && !list.contains(e.target)) list.style.display = "none";
     });
 }
 
-// Chiede prezzo e unità di misura, salva il nuovo prodotto via AJAX
 function salvaNuovoProdotto(nome, ddt_id) {
     const prezzo = prompt('Prezzo unitario per "' + nome + '" (es. 35.00):');
-    if (prezzo === null || prezzo.trim() === "") return;
+    if (!prezzo) return;
     const prezzoNum = parseFloat(prezzo.replace(",", "."));
     if (isNaN(prezzoNum)) { alert("Prezzo non valido."); return; }
-
-    const um = prompt('Unità di misura per "' + nome + '" (mq, pz, gg, ml, qli):', "mq");
-    if (um === null || um.trim() === "") return;
-
+    const um = prompt('Unità di misura (mq, pz, gg, ml, qli):', "mq");
+    if (!um) return;
     fetch("/add_prodotto_ajax", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ nome: nome, prezzo_base: prezzoNum, unita_misura: um.trim() })
-    })
-    .then(r => r.json())
-    .then(function(data) {
+    }).then(r => r.json()).then(function(data) {
         if (data.success) {
-            document.getElementById("prodotto_search_" + ddt_id).value = nome;
-            document.getElementById("prodotto_id_" + ddt_id).value = data.id;
-            document.getElementById("prodotto_prezzo_" + ddt_id).value = prezzoNum;
-            document.getElementById("prodotto_um_" + ddt_id).textContent = um.trim();
-
+            document.getElementById("prod_search_" + ddt_id).value = nome;
+            document.getElementById("prod_id_" + ddt_id).value = data.id;
+            document.getElementById("prezzo_ricerca_" + ddt_id).value = prezzoNum;
+            document.getElementById("um_ricerca_" + ddt_id).textContent = um.trim();
             const json = JSON.parse(document.getElementById("prodotti_json").textContent);
             json.push({ id: data.id, nome: nome, prezzo_base: prezzoNum, unita_misura: um.trim() });
             document.getElementById("prodotti_json").textContent = JSON.stringify(json);
-
             alert('"' + nome + '" salvato nel catalogo.');
-        } else {
-            alert("Errore nel salvataggio.");
         }
     });
 }
+
+// Inizializza autocomplete per ogni DDT
+{% for ddt in ddt_list %}
+setupProdottoAutocomplete({{ ddt.id }});
+{% endfor %}
 </script>
 
 {% endblock %}
