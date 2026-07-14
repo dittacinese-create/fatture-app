@@ -12,7 +12,16 @@
 </div>
 
 <script id="prodotti_json" type="application/json">
-    [{% for p in prodotti %}{"id": {{ p.id }}, "nome": {{ p.nome | tojson }}, "prezzo_base": {{ p.prezzo_base }}, "unita_misura": {{ p.unita_misura | tojson }}}{% if not loop.last %},{% endif %}{% endfor %}]
+[
+    {% for p in prodotti %}
+    {
+        "id": {{ p.id }},
+        "nome": {{ p.nome | tojson }},
+        "prezzo_base": {{ p.prezzo_base | float }},
+        "unita_misura": {{ p.unita_misura | tojson }}
+    }{% if not loop.last %},{% endif %}
+    {% endfor %}
+]
 </script>
 
 <style>
@@ -214,12 +223,12 @@
             </div>
         </form>
 
-        <!-- VISTA BOTTONI MULTI-SELEZIONE (GESTITA IN JS ASINCRONO) -->
+        <!-- VISTA BOTTONI MULTI-SELEZIONE (JS ASINCRONO) -->
         <div id="vista_bottoni_{{ ddt.id }}" style="display:none;">
             <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
                 {% for p in prodotti %}
                 <button type="button"
-                        onclick="toggleSelezioneProdotto({{ ddt.id }}, {{ p.id }}, {{ p.prezzo_base }}, {{ p.nome | tojson }}, {{ p.unita_misura | tojson }})"
+                        onclick="toggleSelezioneProdotto({{ ddt.id }}, {{ p.id }})"
                         id="btn_p_{{ ddt.id }}_{{ p.id }}"
                         class="campo-inline"
                         style="cursor:pointer; background:white; padding:8px 12px; border-radius:8px; font-size:12px; text-align:left; border:1px solid #d0d5dd; transition: all 0.2s;">
@@ -350,8 +359,7 @@
 </div>
 
 <script>
-// Oggetto globale per tracciare lo stato delle multi-selezioni raggruppate per ddt_id
-// Struttura: { ddt_id: { prodotto_id: { nome, prezzo, um } } }
+// Oggetto globale per tracciare lo stato delle multi-selezioni per ogni DDT
 const carrelloDDT = {};
 
 // ========================
@@ -480,14 +488,13 @@ function submitProdotto(ddt_id) {
 }
 
 // ========================
-// MULTI-SELEZIONE BOTTONI (NUOVA LOGICA)
+// MULTI-SELEZIONE BOTTONI (MOLTI INSIEME)
 // ========================
-function toggleSelezioneProdotto(ddt_id, prod_id, prezzo, nome, um) {
+function toggleSelezioneProdotto(ddt_id, prod_id) {
     if (!carrelloDDT[ddt_id]) carrelloDDT[ddt_id] = {};
     const btn = document.getElementById("btn_p_" + ddt_id + "_" + prod_id);
 
     if (carrelloDDT[ddt_id][prod_id]) {
-        // Rimuovi se già presente
         delete carrelloDDT[ddt_id][prod_id];
         if (btn) {
             btn.style.background = "white";
@@ -495,8 +502,23 @@ function toggleSelezioneProdotto(ddt_id, prod_id, prezzo, nome, um) {
             btn.style.color = "initial";
         }
     } else {
-        // Aggiungi se assente
-        carrelloDDT[ddt_id][prod_id] = { nome: nome, prezzo: prezzo, um: um };
+        let prodottiTutti = [];
+        try {
+            prodottiTutti = JSON.parse(document.getElementById("prodotti_json").textContent);
+        } catch (e) {
+            console.error("Errore catalogo:", e);
+            return;
+        }
+        
+        const prodottoTrovato = prodottiTutti.find(p => p.id === prod_id);
+        if (!prodottoTrovato) return;
+
+        carrelloDDT[ddt_id][prod_id] = { 
+            nome: prodottoTrovato.nome, 
+            prezzo: prodottoTrovato.prezzo_base, 
+            um: prodottoTrovato.unita_misura 
+        };
+        
         if (btn) {
             btn.style.background = "#1a1a2e";
             btn.style.borderColor = "#1a1a2e";
@@ -521,8 +543,6 @@ function renderizzaCarrello(ddt_id) {
     }
 
     container.style.display = "block";
-    
-    // Rigenera la lista mantenendo i vecchi valori scritti dall'utente se presenti
     const vecchiValori = {};
     wrapperRighe.querySelectorAll("[data-prod-id]").forEach(el => {
         const pId = el.getAttribute("data-prod-id");
@@ -558,7 +578,6 @@ function renderizzaCarrello(ddt_id) {
     });
 }
 
-// Invia l'intero carrello sequenzialmente in asincrono (senza cambiare rotta)
 async function inviaProdottiMultipli(ddt_id, fattura_id) {
     const container = document.getElementById("carrello_righe_" + ddt_id);
     const righe = container.querySelectorAll("[data-prod-id]");
@@ -582,14 +601,13 @@ async function inviaProdottiMultipli(ddt_id, fattura_id) {
     });
 
     if (erroreValutazione) {
-        alert("Inserisci una quantità valida per tutti i prodotti selezionati.");
+        alert("Inserisci la quantità per tutti i prodotti selezionati.");
         return;
     }
 
     btnInvia.disabled = true;
     btnInvia.textContent = "Inserimento in corso...";
 
-    // Esegui i salvataggi in sequenza emulando il form originario per non impattare sul backend esistente
     for (const item of datiPronti) {
         const formData = new FormData();
         formData.append("fattura_id", fattura_id);
@@ -604,7 +622,6 @@ async function inviaProdottiMultipli(ddt_id, fattura_id) {
         });
     }
 
-    // Pulisci lo stato e ricarica per mostrare le tabelle aggiornate
     carrelloDDT[ddt_id] = {};
     window.location.reload();
 }
@@ -618,9 +635,9 @@ function setupProdottoAutocomplete(ddt_id) {
     const hiddenUM = document.getElementById("um_ricerca_" + ddt_id);
     const hiddenPrezzo = document.getElementById("prezzo_ricerca_" + ddt_id);
     const list = document.getElementById("prod_list_" + ddt_id);
-    const prodotti = JSON.parse(document.getElementById("prodotti_json").textContent);
-
+    
     if (!input) return;
+    const prodotti = JSON.parse(document.getElementById("prodotti_json").textContent);
 
     input.addEventListener("input", function() {
         const query = this.value.toLowerCase().trim();
@@ -683,7 +700,6 @@ function salvaNuovoProdotto(nome, ddt_id) {
     });
 }
 
-// Inizializza autocomplete per ogni DDT
 {% for ddt in ddt_list %}
 setupProdottoAutocomplete({{ ddt.id }});
 {% endfor %}
