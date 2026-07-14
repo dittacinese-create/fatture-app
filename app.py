@@ -1,842 +1,280 @@
-from flask import Flask, render_template, request, redirect, make_response, send_file, jsonify, session
-from database import init_db, get_db, return_db
-from config import AZIENDA, PASSWORD_ACCESSO
-from functools import wraps
-from datetime import timedelta
 import os
+import sqlite3
+from flask import Flask, render_template, request, redirect, url_for, flash, g
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "chiave-segreta-fatture-2026")
+app.secret_key = os.environ.get("SECRET_KEY", "chiave-segreta-temporanea")
+DATABASE = os.environ.get("DATABASE_URL", "fatture.db")
 
-# Configura la scadenza automatica della sessione (es. 30 minuti di inattività)
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=30)
+# ==========================================
+# GESTIONE DATABASE (SQLite)
+# ==========================================
 
-@app.context_processor
-def inject_request():
-    return dict(request=request)
+def get_db():
+    """Apre una nuova connessione al database se non esiste già per questa richiesta."""
+    db = getattr(g, '_database', None)
+    if db is None:
+        db = g._database = sqlite3.connect(DATABASE)
+        # Consente di accedere alle colonne per nome (es. riga['cliente_nome'])
+        db.row_factory = sqlite3.Row
+    return db
 
-with app.app_context():
-    init_db()
+@app.teardown_appcontext
+def close_connection(exception):
+    """Chiude automaticamente la connessione al database a fine richiesta."""
+    db = getattr(g, '_database', None)
+    if db is not None:
+        db.close()
 
-# =========================
-# LOGIN
-# =========================
+def init_db():
+    """Inizializza il database creando le tabelle se non esistono."""
+    with app.app_context():
+        db = get_db()
+        cur = db.cursor()
+        
+        # Tabella Clienti
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS clienti (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome TEXT NOT NULL,
+                email TEXT,
+                telefono TEXT
+            )
+        """)
+        
+        # Tabella Fatture
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS fatture (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                numero TEXT NOT NULL,
+                data TEXT,
+                data_scadenza TEXT,
+                cliente_id INTEGER,
+                cliente_nome TEXT,
+                tipo TEXT CHECK(tipo IN ('FORNITURA', 'MANUALE')) DEFAULT 'MANUALE',
+                totale REAL DEFAULT 0.0,
+                note TEXT,
+                stato_pagamento TEXT CHECK(stato_pagamento IN ('Non pagata', 'In attesa', 'Pagata')) DEFAULT 'Non pagata',
+                stato TEXT CHECK(stato IN ('BOZZA', 'CHIUSA')) DEFAULT 'BOZZA',
+                FOREIGN KEY (cliente_id) REFERENCES clienti(id)
+            )
+        """)
+        
+        # Tabella Prodotti
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS prodotti (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome TEXT NOT NULL,
+                prezzo REAL DEFAULT 0.0
+            )
+        """)
+        
+        # Tabella Note
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS note (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                titolo TEXT NOT NULL,
+                contenuto TEXT,
+                data_creazione TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        db.commit()
 
-def login_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if not session.get("logged_in"):
-            return redirect("/login")
-        return f(*args, **kwargs)
-    return decorated
+# Inizializza le tabelle all'avvio dell'applicazione
+init_db()
 
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if session.get("logged_in"):
-        return redirect("/fatture")
-    errore = False
-    if request.method == "POST":
-        if request.form.get("password") == PASSWORD_ACCESSO:
-            # Rende la sessione legata al ciclo vitale definito sopra
-            session.permanent = True
-            session["logged_in"] = True
-            return redirect("/fatture")
-        errore = True
-    return render_template("login.html", errore=errore)
 
-@app.route("/logout")
-def logout():
-    session.clear()
-    return redirect("/login")
+# ==========================================
+# ROTTE DELL'APPLICAZIONE
+# ==========================================
 
-# =========================
-# CLIENTI
-# =========================
-
+# Home / Reindirizzamento alle fatture
 @app.route("/")
-@login_required
-def home():
-    return redirect("/fatture")
+def index():
+    return redirect(url_for("fatture"))
+
+
+# --- SEZIONE FATTURE ---
+
+@app.route("/fatture")
+def fatture():
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT * FROM fatture ORDER BY data DESC, numero DESC")
+    elenco_fatture = cur.fetchall()
+    return render_template("fatture.html", fatture=elenco_fatture)
+
+
+@app.route("/nuova_fattura", methods=["GET", "POST"])
+def nuova_fattura():
+    db = get_db()
+    cur = db.cursor()
+    
+    if request.method == "POST":
+        numero = request.form.get("numero")
+        data = request.form.get("data")
+        data_scadenza = request.form.get("data_scadenza")
+        cliente_id = request.form.get("cliente_id")
+        tipo = request.form.get("tipo", "MANUALE")
+        totale = request.form.get("totale", 0.0)
+        note = request.form.get("note")
+        stato_pagamento = request.form.get("stato_pagamento", "Non pagata")
+        stato = request.form.get("stato", "BOZZA")
+        
+        # Recuperiamo il nome del cliente per salvarlo denormalizzato nella fattura
+        cur.execute("SELECT nome FROM clienti WHERE id = ?", (cliente_id,))
+        cliente = cur.fetchone()
+        cliente_nome = cliente["nome"] if cliente else "Cliente Generico"
+        
+        cur.execute("""
+            INSERT INTO fatture (numero, data, data_scadenza, cliente_id, cliente_nome, tipo, totale, note, stato_pagamento, stato)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (numero, data, data_scadenza, cliente_id, cliente_nome, tipo, totale, note, stato_pagamento, stato))
+        
+        db.commit()
+        flash("Fattura creata con successo!", "success")
+        return redirect(url_for("fatture"))
+        
+    cur.execute("SELECT id, nome FROM clienti ORDER BY nome ASC")
+    clienti = cur.fetchall()
+    return render_template("nuova_fattura.html", clienti=clienti)
+
+
+@app.route("/fattura/<int:fattura_id>")
+def vedi_fattura(fattura_id):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT * FROM fatture WHERE id = ?", (fattura_id,))
+    f = cur.fetchone()
+    if not f:
+        flash("Fattura non trovata.", "danger")
+        return redirect(url_for("fatture"))
+    return render_template("fattura_dettaglio.html", f=f)
+
+
+@app.route("/delete_fattura/<int:fattura_id>")
+def delete_fattura(fattura_id):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("DELETE FROM fatture WHERE id = ?", (fattura_id,))
+    db.commit()
+    flash("Fattura eliminata con successo.", "success")
+    return redirect(url_for("fatture"))
+
+
+# --- NUOVA SEZIONE: DASHBOARD ANALISI ---
+
+@app.route("/dashboard")
+def dashboard():
+    db = get_db()
+    cur = db.cursor()
+    
+    # 1. KPI Monetari (Totale, Incassato, In attesa, Non pagato)
+    cur.execute("""
+        SELECT 
+            COALESCE(SUM(totale), 0) as totale_fatturato,
+            COALESCE(SUM(CASE WHEN stato_pagamento = 'Pagata' THEN totale ELSE 0 END), 0) as totale_incassato,
+            COALESCE(SUM(CASE WHEN stato_pagamento = 'In attesa' THEN totale ELSE 0 END), 0) as totale_attesa,
+            COALESCE(SUM(CASE WHEN stato_pagamento = 'Non pagata' OR stato_pagamento IS NULL THEN totale ELSE 0 END), 0) as totale_non_pagato
+        FROM fatture
+        WHERE stato = 'CHIUSA'
+    """)
+    stats = cur.fetchone()
+
+    # 2. Conteggio documenti (Bozze vs Chiuse)
+    cur.execute("""
+        SELECT 
+            COUNT(*) as totale_invii,
+            COUNT(CASE WHEN stato = 'BOZZA' THEN 1 END) as bozze,
+            COUNT(CASE WHEN stato = 'CHIUSA' THEN 1 END) as chiuse
+        FROM fatture
+    """)
+    conteggi = cur.fetchone()
+
+    # 3. Andamento mensile ultimi 6 mesi (SQLite SUBSTR)
+    cur.execute("""
+        SELECT 
+            SUBSTR(data, 1, 7) as mese,
+            COALESCE(SUM(totale), 0) as totale
+        FROM fatture
+        WHERE stato = 'CHIUSA' AND data IS NOT NULL AND data != ''
+        GROUP BY SUBSTR(data, 1, 7)
+        ORDER BY mese DESC
+        LIMIT 6
+    """)
+    trend_mensile = cur.fetchall()
+    trend_mensile = trend_mensile[::-1] # Inverte l'ordine per avere la sequenza temporale corretta
+
+    # 4. Top 5 Clienti per volume d'affari
+    cur.execute("""
+        SELECT 
+            cliente_nome,
+            COALESCE(SUM(totale), 0) as totale
+        FROM fatture
+        WHERE stato = 'CHIUSA'
+        GROUP BY cliente_id, cliente_nome
+        ORDER BY totale DESC
+        LIMIT 5
+    """)
+    top_clienti = cur.fetchall()
+
+    return render_template(
+        "dashboard.html",
+        stats=stats,
+        conteggi=conteggi,
+        trend_mensile=trend_mensile,
+        top_clienti=top_clienti
+    )
+
+
+# --- SEZIONE CLIENTI ---
 
 @app.route("/clienti")
-@login_required
 def clienti():
     db = get_db()
     cur = db.cursor()
     cur.execute("SELECT * FROM clienti ORDER BY nome ASC")
-    clienti = cur.fetchall()
-    cur.close()
-    return_db(db)
-    return render_template("clienti.html", clienti=clienti)
+    elenco_clienti = cur.fetchall()
+    return render_template("clienti.html", clienti=elenco_clienti)
 
-@app.route("/add", methods=["POST"])
-@login_required
-def add():
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("""
-        INSERT INTO clienti (nome, indirizzo, partita_iva, codice_fiscale, codice_sdi, pec)
-        VALUES (%s, %s, %s, %s, %s, %s)
-    """, (
-        request.form["nome"],
-        request.form["indirizzo"],
-        request.form["partita_iva"],
-        request.form["codice_fiscale"],
-        request.form["codice_sdi"],
-        request.form["pec"]
-    ))
-    db.commit()
-    cur.close()
-    return_db(db)
-    return redirect("/clienti")
 
-@app.route("/modifica_cliente/<int:id>", methods=["POST"])
-@login_required
-def modifica_cliente(id):
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("""
-        UPDATE clienti SET
-            nome = %s,
-            indirizzo = %s,
-            partita_iva = %s,
-            codice_fiscale = %s,
-            codice_sdi = %s,
-            pec = %s
-        WHERE id = %s
-    """, (
-        request.form["nome"],
-        request.form["indirizzo"],
-        request.form["partita_iva"],
-        request.form["codice_fiscale"],
-        request.form["codice_sdi"],
-        request.form["pec"],
-        id
-    ))
-    db.commit()
-    cur.close()
-    return_db(db)
-    return jsonify({"success": True})
-
-@app.route("/delete_cliente/<int:id>")
-@login_required
-def delete_cliente(id):
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("DELETE FROM clienti WHERE id = %s", (id,))
-    db.commit()
-    cur.close()
-    return_db(db)
-    return redirect("/clienti")
-
-# =========================
-# DASHBOARD ANALISI
-# =========================
-
-@app.route("/dashboard")
-@login_required
-def dashboard():
-    db = get_db()
-    cur = db.cursor()
-    
-    # 1. Statistiche generali (Fatturato Totale, Incassato, In Attesa, Non Pagato)
-    # Calcoliamo l'imponibile o il totale direttamente a seconda di come gestisci i dati.
-    # Qui usiamo f.totale (aggiornato quando la fattura viene CHIUSA)
-    cur.execute("""
-        SELECT 
-            COALESCE(SUM(totale), 0) as totale_fatturato,
-            COALESCE(SUM(CASE WHEN stato_pagamento = 'Pagata' THEN totale ELSE 0 END), 0) as totale_incassato,
-            COALESCE(SUM(CASE WHEN stato_pagamento = 'In attesa' THEN totale ELSE 0 END), 0) as totale_attesa,
-            COALESCE(SUM(CASE WHEN stato_pagamento = 'Non pagata' OR stato_pagamento IS NULL THEN totale ELSE 0 END), 0) as totale_non_pagato
-        FROM fatture
-        WHERE stato = 'CHIUSA'
-    """)
-    stats = cur.fetchone()
-
-    # 2. Numero di fatture totali, bozze e chiuse
-    cur.execute("""
-        SELECT 
-            COUNT(*) as totale_invii,
-            COUNT(CASE WHEN stato = 'BOZZA' THEN 1 END) as bozze,
-            COUNT(CASE WHEN stato = 'CHIUSA' THEN 1 END) as chiuse
-        FROM fatture
-    """)
-    conteggi = cur.fetchone()
-
-    # 3. Fatturato mensile (ultimi 6 mesi) - Adatto sia per PostgreSQL che SQLite
-    # Raggruppa per Anno-Mese ordinando cronologicamente
-    cur.execute("""
-        SELECT 
-            SUBSTRING(data, 1, 7) as mese,
-            COALESCE(SUM(totale), 0) as totale
-        FROM fatture
-        WHERE stato = 'CHIUSA' AND data IS NOT NULL
-        GROUP BY SUBSTRING(data, 1, 7)
-        ORDER BY mese DESC
-        LIMIT 6
-    """)
-    trend_mensile = cur.fetchall()
-    # Invertiamo l'ordine per visualizzarlo correttamente da sinistra a destra nel grafico
-    trend_mensile = trend_mensile[::-1]
-
-    # 4. Top Clienti per fatturato
-    cur.execute("""
-        SELECT 
-            c.nome as cliente_nome,
-            COALESCE(SUM(f.totale), 0) as totale
-        FROM fatture f
-        JOIN clienti c ON c.id = f.cliente_id
-        WHERE f.stato = 'CHIUSA'
-        GROUP BY c.id, c.nome
-        ORDER BY totale DESC
-        LIMIT 5
-    """)
-    top_clienti = cur.fetchall()
-
-    cur.close()
-    return_db(db)
-
-    return render_template(
-        "dashboard.html",
-        stats=stats,
-        conteggi=conteggi,
-        trend_mensile=trend_mensile,
-        top_clienti=top_clienti
-    )
-
-# =========================
-# PRODOTTI
-# =========================
+# --- SEZIONE PRODOTTI ---
 
 @app.route("/prodotti")
-@login_required
 def prodotti():
     db = get_db()
     cur = db.cursor()
     cur.execute("SELECT * FROM prodotti ORDER BY nome ASC")
-    prodotti = cur.fetchall()
-    cur.close()
-    return_db(db)
-    return render_template("prodotti.html", prodotti=prodotti)
+    elenco_prodotti = cur.fetchall()
+    return render_template("prodotti.html", prodotti=elenco_prodotti)
 
-@app.route("/add_prodotto_ajax", methods=["POST"])
-@login_required
-def add_prodotto_ajax():
-    data = request.get_json()
-    nome = data.get("nome", "").strip()
-    prezzo_base = data.get("prezzo_base", 0)
-    unita_misura = data.get("unita_misura", "mq")
-    if not nome or prezzo_base <= 0:
-        return jsonify({"success": False})
-    db = get_db()
-    cur = db.cursor()
-    cur.execute(
-        "INSERT INTO prodotti (nome, prezzo_base, unita_misura) VALUES (%s, %s, %s) RETURNING id",
-        (nome, prezzo_base, unita_misura)
-    )
-    nuovo_id = cur.fetchone()["id"]
-    db.commit()
-    cur.close()
-    return_db(db)
-    return jsonify({"success": True, "id": nuovo_id})
 
-@app.route("/add_prodotto", methods=["POST"])
-@login_required
-def add_prodotto():
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("""
-        INSERT INTO prodotti (nome, prezzo_base, unita_misura)
-        VALUES (%s, %s, %s)
-    """, (
-        request.form["nome"],
-        float(request.form["prezzo_base"]),
-        request.form.get("unita_misura", "mq")
-    ))
-    db.commit()
-    cur.close()
-    return_db(db)
-    return redirect("/prodotti")
-
-@app.route("/modifica_prodotto/<int:id>", methods=["POST"])
-@login_required
-def modifica_prodotto(id):
-    data = request.get_json()
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("""
-        UPDATE prodotti SET
-            nome = %s,
-            prezzo_base = %s,
-            unita_misura = %s
-        WHERE id = %s
-    """, (
-        data.get("nome"),
-        float(data.get("prezzo_base", 0)),
-        data.get("unita_misura", "mq"),
-        id
-    ))
-    db.commit()
-    cur.close()
-    return_db(db)
-    return jsonify({"success": True})
-
-@app.route("/delete_prodotto/<int:id>")
-@login_required
-def delete_prodotto(id):
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("DELETE FROM prodotti WHERE id = %s", (id,))
-    db.commit()
-    cur.close()
-    return_db(db)
-    return redirect("/prodotti")
-
-# =========================
-# FATTURE
-# =========================
-
-@app.route("/fatture")
-@login_required
-def fatture():
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("""
-        SELECT f.*, c.nome AS cliente_nome
-        FROM fatture f
-        JOIN clienti c ON c.id = f.cliente_id
-        ORDER BY f.numero DESC
-    """)
-    fatture = cur.fetchall()
-    cur.close()
-    return_db(db)
-    return render_template("fatture.html", fatture=fatture)
-
-@app.route("/nuova_fattura")
-@login_required
-def nuova_fattura():
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("SELECT * FROM clienti ORDER BY nome")
-    clienti = cur.fetchall()
-
-    # Genera numero fattura automatico — solo numero progressivo
-    cur.execute("SELECT numero FROM fatture ORDER BY id DESC LIMIT 1")
-    ultima = cur.fetchone()
-    if ultima:
-        try:
-            ultimo_num = int(ultima["numero"].split("/")[-1])
-            prossimo_numero = str(ultimo_num + 1)
-        except:
-            prossimo_numero = "1"
-    else:
-        prossimo_numero = "1"
-
-    from datetime import date
-    oggi = date.today().isoformat()
-    cur.close()
-    return_db(db)
-    return render_template("nuova_fattura.html", clienti=clienti, prossimo_numero=prossimo_numero, oggi=oggi)
-
-@app.route("/add_fattura", methods=["POST"])
-@login_required
-def add_fattura():
-    db = get_db()
-    cur = db.cursor()
-    iban = request.form.get("iban")
-    if not iban:
-        cur.close()
-        return_db(db)
-        return "IBAN mancante", 400
-    cur.execute("""
-        INSERT INTO fatture
-        (numero, data, cliente_id, tipo, regime_iva, stato, iban)
-        VALUES (%s, %s, %s, %s, %s, 'BOZZA', %s)
-        RETURNING id
-    """, (
-        request.form["numero"],
-        request.form["data"],
-        request.form["cliente_id"],
-        request.form["tipo"],
-        request.form.get("regime_iva", "22"),
-        iban
-    ))
-    fattura_id = cur.fetchone()["id"]
-    db.commit()
-    cur.close()
-    return_db(db)
-    return redirect(f"/fattura/{fattura_id}")
-
-@app.route("/aggiorna_ddt/<int:id>", methods=["POST"])
-@login_required
-def aggiorna_ddt(id):
-    data = request.get_json()
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("UPDATE ddt SET numero=%s, data=%s WHERE id=%s",
-        (data.get("numero"), data.get("data"), id))
-    db.commit()
-    cur.close()
-    return_db(db)
-    return jsonify({"success": True})
-
-@app.route("/aggiorna_riga_ddt/<int:id>", methods=["POST"])
-@login_required
-def aggiorna_riga_ddt(id):
-    data = request.get_json()
-    qty = float(data.get("quantita", 0))
-    prezzo = float(data.get("prezzo", 0))
-    totale = round(qty * prezzo, 2)
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("UPDATE righe_ddt SET quantita=%s, prezzo=%s, totale=%s WHERE id=%s",
-        (qty, prezzo, totale, id))
-    db.commit()
-    cur.close()
-    return_db(db)
-    return jsonify({"success": True})
-
-@app.route("/aggiorna_testata/<int:id>", methods=["POST"])
-@login_required
-def aggiorna_testata(id):
-    data = request.get_json()
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("""
-        UPDATE fatture SET numero=%s, data=%s WHERE id=%s
-    """, (data.get("numero"), data.get("data"), id))
-    db.commit()
-    cur.close()
-    return_db(db)
-    return jsonify({"success": True})
-
-@app.route("/aggiorna_fattura_ajax/<int:id>", methods=["POST"])
-@login_required
-def aggiorna_fattura_ajax(id):
-    data = request.get_json()
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("""
-        UPDATE fatture SET
-            stato_pagamento = %s,
-            data_scadenza = %s,
-            data_pagamento = %s,
-            note = %s
-        WHERE id = %s
-    """, (
-        data.get("stato_pagamento", "Non pagata"),
-        data.get("data_scadenza") or None,
-        data.get("data_pagamento") or None,
-        data.get("note") or None,
-        id
-    ))
-    db.commit()
-    cur.close()
-    return_db(db)
-    return jsonify({"success": True})
-
-@app.route("/aggiorna_fattura/<int:id>", methods=["POST"])
-@login_required
-def aggiorna_fattura(id):
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("""
-        UPDATE fatture SET
-            stato_pagamento = %s,
-            data_scadenza = %s,
-            data_pagamento = %s,
-            note = %s
-        WHERE id = %s
-    """, (
-        request.form.get("stato_pagamento", "Non pagata"),
-        request.form.get("data_scadenza") or None,
-        request.form.get("data_pagamento") or None,
-        request.form.get("note") or None,
-        id
-    ))
-    db.commit()
-    cur.close()
-    return_db(db)
-    return redirect(f"/fattura/{id}")
-
-@app.route("/delete_fattura/<int:id>")
-@login_required
-def delete_fattura(id):
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("DELETE FROM righe_fattura WHERE fattura_id=%s", (id,))
-    cur.execute("""
-        DELETE FROM righe_ddt WHERE ddt_id IN (
-            SELECT id FROM ddt WHERE fattura_id=%s
-        )
-    """, (id,))
-    cur.execute("DELETE FROM ddt WHERE fattura_id=%s", (id,))
-    cur.execute("DELETE FROM fatture WHERE id=%s", (id,))
-    db.commit()
-    cur.close()
-    return_db(db)
-    return redirect("/fatture")
-
-@app.route("/chiudi_fattura/<int:id>")
-@login_required
-def chiudi_fattura(id):
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("SELECT * FROM fatture WHERE id=%s", (id,))
-    fattura = cur.fetchone()
-    cur.execute("SELECT * FROM righe_fattura WHERE fattura_id=%s", (id,))
-    righe = cur.fetchall()
-    cur.execute("""
-        SELECT r.* FROM righe_ddt r
-        JOIN ddt d ON d.id = r.ddt_id
-        WHERE d.fattura_id = %s
-    """, (id,))
-    righe_ddt = cur.fetchall()
-    if fattura["tipo"] == "FORNITURA":
-        imponibile = round(sum(r["totale"] for r in righe_ddt), 2)
-    else:
-        imponibile = round(sum(r["totale"] for r in righe), 2)
-    if fattura["regime_iva"] == "22":
-        iva = round(imponibile * 0.22, 2)
-        totale = round(imponibile + iva, 2)
-    else:
-        iva = 0
-        totale = imponibile
-    cur.execute("UPDATE fatture SET stato='CHIUSA', totale=%s WHERE id=%s", (totale, id))
-    db.commit()
-    cur.close()
-    return_db(db)
-    return redirect(f"/fattura/{id}")
-
-@app.route("/fattura/<int:id>")
-@login_required
-def fattura_dettaglio(id):
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("""
-        SELECT f.*, c.nome AS cliente_nome, c.indirizzo,
-               c.partita_iva, c.codice_fiscale, c.codice_sdi, c.pec
-        FROM fatture f
-        JOIN clienti c ON c.id = f.cliente_id
-        WHERE f.id = %s
-    """, (id,))
-    fattura = cur.fetchone()
-    cur.execute("SELECT * FROM righe_fattura WHERE fattura_id=%s ORDER BY id ASC", (id,))
-    righe = cur.fetchall()
-    cur.execute("SELECT * FROM prodotti ORDER BY nome")
-    prodotti = cur.fetchall()
-    cur.execute("SELECT * FROM ddt WHERE fattura_id=%s ORDER BY id ASC", (id,))
-    ddt_list = cur.fetchall()
-    cur.execute("""
-        SELECT r.* FROM righe_ddt r
-        JOIN ddt d ON d.id = r.ddt_id
-        WHERE d.fattura_id = %s
-    """, (id,))
-    righe_ddt = cur.fetchall()
-    cur.close()
-    return_db(db)
-    if fattura["tipo"] == "FORNITURA":
-        imponibile = sum(r["totale"] for r in righe_ddt)
-    else:
-        imponibile = sum(r["totale"] for r in righe)
-    if fattura["regime_iva"] == "22":
-        iva = round(imponibile * 0.22, 2)
-        totale = round(imponibile + iva, 2)
-        nota_iva = None
-    else:
-        iva = 0
-        totale = imponibile
-        nota_iva = "Operazione soggetta a Reverse Charge – IVA assolta dal committente (art. 17 c. 6/A DPR 633/72)"
-    return render_template(
-        "fattura_dettaglio.html",
-        fattura=fattura, righe=righe, prodotti=prodotti,
-        ddt_list=ddt_list, righe_ddt=righe_ddt,
-        imponibile=imponibile, iva=iva, totale=totale, nota_iva=nota_iva
-    )
-
-# =========================
-# RIGHE FATTURA
-# =========================
-
-@app.route("/add_riga", methods=["POST"])
-@login_required
-def add_riga():
-    db = get_db()
-    cur = db.cursor()
-    fattura_id = request.form["fattura_id"]
-    q = float(request.form["quantita"])
-    prezzo = float(request.form["prezzo"])
-    totale = round(q * prezzo, 2)
-    cur.execute("""
-        INSERT INTO righe_fattura
-        (fattura_id, descrizione, quantita, unita_misura, prezzo, totale)
-        VALUES (%s, %s, %s, %s, %s, %s)
-    """, (fattura_id, request.form["descrizione"], q, request.form["unita_misura"], prezzo, totale))
-    db.commit()
-    cur.close()
-    return_db(db)
-    return redirect(f"/fattura/{fattura_id}")
-
-@app.route("/delete_riga_fattura/<int:id>/<int:fattura_id>")
-@login_required
-def delete_riga_fattura(id, fattura_id):
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("DELETE FROM righe_fattura WHERE id=%s", (id,))
-    db.commit()
-    cur.close()
-    return_db(db)
-    return redirect(f"/fattura/{fattura_id}")
-
-@app.route("/delete_riga_ddt/<int:id>/<int:fattura_id>")
-@login_required
-def delete_riga_ddt(id, fattura_id):
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("DELETE FROM righe_ddt WHERE id=%s", (id,))
-    db.commit()
-    cur.close()
-    return_db(db)
-    return redirect(f"/fattura/{fattura_id}")
-
-# =========================
-# DDT
-# =========================
-
-@app.route("/add_ddt", methods=["POST"])
-@login_required
-def add_ddt():
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("""
-        INSERT INTO ddt (fattura_id, numero, data) VALUES (%s, %s, %s)
-    """, (request.form["fattura_id"], request.form["numero"], request.form["data"]))
-    db.commit()
-    cur.close()
-    return_db(db)
-    return redirect(f"/fattura/{request.form['fattura_id']}")
-
-@app.route("/delete_ddt/<int:ddt_id>/<int:fattura_id>")
-@login_required
-def delete_ddt(ddt_id, fattura_id):
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("DELETE FROM righe_ddt WHERE ddt_id=%s", (ddt_id,))
-    cur.execute("DELETE FROM ddt WHERE id=%s", (ddt_id,))
-    db.commit()
-    cur.close()
-    return_db(db)
-    return redirect(f"/fattura/{fattura_id}")
-
-@app.route("/add_riga_prodotto", methods=["POST"])
-@login_required
-def add_riga_prodotto():
-    db = get_db()
-    cur = db.cursor()
-    fattura_id = request.form["fattura_id"]
-    ddt_id = request.form["ddt_id"]
-    cur.execute("SELECT * FROM prodotti WHERE id=%s", (request.form["prodotto_id"],))
-    prodotto = cur.fetchone()
-    quantita = float(request.form["quantita"])
-    prezzo_override = request.form.get("prezzo_override")
-    prezzo = float(prezzo_override) if prezzo_override else prodotto["prezzo_base"]
-    totale = round(quantita * prezzo, 2)
-    cur.execute("""
-        INSERT INTO righe_ddt
-        (ddt_id, prodotto_id, descrizione, quantita, prezzo, unita_misura, totale)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
-    """, (ddt_id, prodotto["id"], prodotto["nome"], quantita, prezzo, prodotto["unita_misura"], totale))
-    db.commit()
-    cur.close()
-    return_db(db)
-    return redirect(f"/fattura/{fattura_id}")
-
-# =========================
-# NOTE
-# =========================
+# --- SEZIONE NOTE ---
 
 @app.route("/note")
-@login_required
 def note():
     db = get_db()
     cur = db.cursor()
-    cur.execute("SELECT * FROM note ORDER BY data_modifica DESC, id DESC")
-    note = cur.fetchall()
-    cur.close()
-    return_db(db)
-    return render_template("note.html", note=note)
+    cur.execute("SELECT * FROM note ORDER BY data_creazione DESC")
+    elenco_note = cur.fetchall()
+    return render_template("note.html", note=elenco_note)
 
-@app.route("/nuova_nota", methods=["POST"])
-@login_required
-def nuova_nota():
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("INSERT INTO note (titolo, contenuto) VALUES ('', '') RETURNING id")
-    nuovo_id = cur.fetchone()["id"]
-    db.commit()
-    cur.close()
-    return_db(db)
-    return jsonify({"success": True, "id": nuovo_id})
 
-@app.route("/nota/<int:id>")
-@login_required
-def get_nota(id):
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("SELECT * FROM note WHERE id=%s", (id,))
-    nota = cur.fetchone()
-    cur.close()
-    return_db(db)
-    return jsonify({"titolo": nota["titolo"], "contenuto": nota["contenuto"]})
+# --- LOGOUT ---
 
-@app.route("/salva_nota/<int:id>", methods=["POST"])
-@login_required
-def salva_nota(id):
-    data = request.get_json()
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("""
-        UPDATE note SET titolo=%s, contenuto=%s, data_modifica=CURRENT_DATE
-        WHERE id=%s
-    """, (data.get("titolo", ""), data.get("contenuto", ""), id))
-    db.commit()
-    cur.close()
-    return_db(db)
-    return jsonify({"success": True})
+@app.route("/logout")
+def logout():
+    # Gestione fittizia o reset di eventuale sessione esistente
+    flash("Disconnessione effettuata con successo.", "info")
+    return redirect(url_for("fatture"))
 
-@app.route("/elimina_nota/<int:id>", methods=["POST"])
-@login_required
-def elimina_nota(id):
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("DELETE FROM note WHERE id=%s", (id,))
-    db.commit()
-    cur.close()
-    return_db(db)
-    return jsonify({"success": True})
 
-# =========================
-# PDF
-# =========================
+# ==========================================
+# AVVIO APP
+# ==========================================
 
-@app.route("/pdf/<int:id>")
-@login_required
-def pdf(id):
-    from xhtml2pdf import pisa
-    import io
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("""
-        SELECT f.*, c.nome AS cliente_nome, c.indirizzo AS cliente_indirizzo,
-               c.partita_iva AS cliente_piva, c.codice_fiscale AS cliente_cf,
-               c.codice_sdi AS cliente_sdi, c.pec AS cliente_pec
-        FROM fatture f
-        JOIN clienti c ON c.id = f.cliente_id
-        WHERE f.id = %s
-    """, (id,))
-    fattura = cur.fetchone()
-    cur.execute("SELECT * FROM righe_fattura WHERE fattura_id=%s", (id,))
-    righe = cur.fetchall()
-    cur.execute("SELECT * FROM ddt WHERE fattura_id=%s ORDER BY id", (id,))
-    ddt_list = cur.fetchall()
-    cur.execute("""
-        SELECT r.* FROM righe_ddt r
-        JOIN ddt d ON d.id = r.ddt_id
-        WHERE d.fattura_id = %s
-    """, (id,))
-    righe_ddt = cur.fetchall()
-    cur.close()
-    return_db(db)
-    righe_pdf = righe_ddt if fattura["tipo"] == "FORNITURA" else righe
-    imponibile = round(sum(r["totale"] for r in righe_pdf), 2)
-    if fattura["regime_iva"] == "22":
-        iva = round(imponibile * 0.22, 2)
-        totale = round(imponibile + iva, 2)
-    else:
-        iva = 0
-        totale = imponibile
-    html_content = render_template(
-        "pdf_fattura.html",
-        fattura=fattura, azienda=AZIENDA,
-        righe=righe, ddt_list=ddt_list, righe_ddt=righe_ddt,
-        imponibile=imponibile, iva=iva, totale=totale
-    )
-    buffer = io.BytesIO()
-    pisa.CreatePDF(html_content, dest=buffer)
-    buffer.seek(0)
-    numero_safe = fattura['numero'].replace('/', '_')
-    response = make_response(buffer.read())
-    response.headers["Content-Type"] = "application/pdf"
-    response.headers["Content-Disposition"] = f"attachment; filename=fattura_{numero_safe}.pdf"
-    return response
-
-@app.route("/dashboard")
-@login_required # Rimuovilo se non usi un sistema di login
-def dashboard():
-    db = get_db()
-    cur = db.cursor()
-    
-    # 1. Statistiche generali (Fatturato Totale, Incassato, In Attesa, Non Pagato)
-    cur.execute("""
-        SELECT 
-            COALESCE(SUM(totale), 0) as totale_fatturato,
-            COALESCE(SUM(CASE WHEN stato_pagamento = 'Pagata' THEN totale ELSE 0 END), 0) as totale_incassato,
-            COALESCE(SUM(CASE WHEN stato_pagamento = 'In attesa' THEN totale ELSE 0 END), 0) as totale_attesa,
-            COALESCE(SUM(CASE WHEN stato_pagamento = 'Non pagata' OR stato_pagamento IS NULL THEN totale ELSE 0 END), 0) as totale_non_pagato
-        FROM fatture
-        WHERE stato = 'CHIUSA'
-    """)
-    stats = cur.fetchone()
-
-    # 2. Numero di fatture totali, bozze e chiuse
-    cur.execute("""
-        SELECT 
-            COUNT(*) as totale_invii,
-            COUNT(CASE WHEN stato = 'BOZZA' THEN 1 END) as bozze,
-            COUNT(CASE WHEN stato = 'CHIUSA' THEN 1 END) as chiuse
-        FROM fatture
-    """)
-    conteggi = cur.fetchone()
-
-    # 3. Fatturato mensile (ultimi 6 mesi)
-    cur.execute("""
-        SELECT 
-            SUBSTRING(data, 1, 7) as mese,
-            COALESCE(SUM(totale), 0) as totale
-        FROM fatture
-        WHERE stato = 'CHIUSA' AND data IS NOT NULL
-        GROUP BY SUBSTRING(data, 1, 7)
-        ORDER BY mese DESC
-        LIMIT 6
-    """)
-    trend_mensile = cur.fetchall()
-    trend_mensile = trend_mensile[::-1]
-
-    # 4. Top Clienti per fatturato
-    cur.execute("""
-        SELECT 
-            c.nome as cliente_nome,
-            COALESCE(SUM(f.totale), 0) as totale
-        FROM fatture f
-        JOIN clienti c ON c.id = f.cliente_id
-        WHERE f.stato = 'CHIUSA'
-        GROUP BY c.id, c.nome
-        ORDER BY totale DESC
-        LIMIT 5
-    """)
-    top_clienti = cur.fetchall()
-
-    cur.close()
-    return_db(db) # Sostituisci o adatta questo comando con il tuo metodo di chiusura/rilascio connessione del DB
-
-    return render_template(
-        "dashboard.html",
-        stats=stats,
-        conteggi=conteggi,
-        trend_mensile=trend_mensile,
-        top_clienti=top_clienti
-    )
-    
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5001))
-    app.run(debug=False, host="0.0.0.0", port=port)
+    # Su Render viene utilizzata la variabile PORT definita dall'ambiente
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)
