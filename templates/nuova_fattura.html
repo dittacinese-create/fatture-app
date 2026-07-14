@@ -6,13 +6,8 @@
     <a href="/fatture" class="btn">← Torna alle fatture</a>
 </div>
 
-<script id="clienti_json" type="application/json">
-    [{% for c in clienti %}{"id": {{ c.id }}, "nome": {{ c.nome | tojson }}}{% if not loop.last %},{% endif %}{% endfor %}]
-</script>
-
-<div class="card">
-    <form method="POST" action="/add_fattura" onsubmit="return validateForm()">
-
+<div class="card" style="max-width: 600px;">
+    <form method="POST" action="/nuova_fattura" id="form_nuova_fattura">
         <div class="form-row">
             <div class="form-group">
                 <label>Numero fattura *</label>
@@ -20,169 +15,145 @@
             </div>
             <div class="form-group">
                 <label>Data *</label>
-                <input type="date" name="data" id="data_fattura" required>
+                <input type="date" name="data" value="{{ data_oggi }}" required>
             </div>
         </div>
 
+        <!-- SELEZIONE CLIENTE -->
         <div class="form-group">
-            <label>
-                Cliente *
-                <button type="button" onclick="toggleVistaClienti()"
-                        style="margin-left:10px; font-size:11px; padding:2px 8px; border:1px solid #d0d5dd; border-radius:20px; background:white; cursor:pointer; color:#6b7280;">
-                    🔀 <span id="lbl_toggle_c">Vista bottoni</span>
+            <label style="display:flex; justify-content:space-between; align-items:center;">
+                <span>Cliente *</span>
+                <button type="button" onclick="toggleVistaCliente()" id="btn_toggle_cliente"
+                        style="font-size:11px; padding:2px 8px; border:1px solid #d0d5dd; border-radius:20px; background:white; cursor:pointer; color:#6b7280;">
+                    📋 Vista ricerca
                 </button>
             </label>
 
-            <!-- VISTA RICERCA -->
-            <div id="vista_ricerca_c">
-                <div class="autocomplete-wrapper">
-                    <input type="text" id="cliente_search" placeholder="Scrivi per cercare cliente..." autocomplete="off">
-                    <div class="autocomplete-list" id="cliente_list"></div>
-                </div>
-            </div>
-
-            <!-- VISTA BOTTONI -->
-            <div id="vista_bottoni_c" style="display:none; display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; display:none;">
+            <!-- Vista Bottoni Rapidi (Predefinita) -->
+            <div id="cliente_bottoni" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:5px;">
                 {% for c in clienti %}
-                <button type="button"
-                        onclick="selezionaCliente({{ c.id }}, {{ c.nome | tojson }})"
-                        id="btn_c_{{ c.id }}"
-                        style="padding:8px 14px; border:1px solid #d0d5dd; border-radius:8px; background:white; cursor:pointer; font-size:13px; color:#1a1a2e; transition:all 0.15s;">
+                <button type="button" class="campo-inline btn-seleziona-cliente" 
+                        data-id="{{ c.id }}"
+                        onclick="selezionaClienteBottoni({{ c.id }}, this)"
+                        style="cursor:pointer; background:white; padding:8px 12px; border-radius:8px; font-size:13px; border:1px solid #d0d5dd; font-weight:500; transition:all 0.2s;">
                     {{ c.nome }}
                 </button>
                 {% endfor %}
             </div>
 
-            <input type="hidden" name="cliente_id" id="cliente_id">
-            <div id="cliente_selezionato" style="margin-top:6px; font-size:13px; color:#059669; font-weight:600; display:none;"></div>
+            <!-- Vista Ricerca Testuale (Nascosta) -->
+            <div id="cliente_ricerca" style="display:none; margin-top:5px; position:relative;">
+                <input type="text" id="search_cliente_input" placeholder="Digita per cercare un cliente..." autocomplete="off" style="width:100%;">
+                <div id="lista_clienti_autocomplete" class="autocomplete-list" style="position:absolute; width:100%; top:100%; left:0; z-index:99; background:white; border:1px solid #d0d5dd; display:none; max-height:200px; overflow-y:auto;">
+                    {% for c in clienti %}
+                    <div data-id="{{ c.id }}" data-nome="{{ c.nome | lower }}" class="item-cliente-search" style="padding:8px 10px; cursor:pointer; font-size:13px;">
+                        {{ c.nome }}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <input type="hidden" name="cliente_id" id="cliente_id_hidden" required>
         </div>
 
         <div class="form-row">
             <div class="form-group">
                 <label>Tipo fattura *</label>
-                <select name="tipo" id="tipo" onchange="toggleIva()">
+                <select name="tipo" required>
                     <option value="FORNITURA">Fornitura (da DDT)</option>
                     <option value="MANUALE">Manuale</option>
                 </select>
             </div>
             <div class="form-group">
                 <label>Regime IVA *</label>
-                <select name="regime_iva" id="regime_iva">
+                <select name="regime_iva" required>
                     <option value="22">IVA 22%</option>
                     <option value="RC">Reverse Charge (0%)</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label>Banca di accredito *</label>
-                <select name="iban" required>
-                    <option value="BPER Banca di Luserna San Giovanni - IBAN IT35S0538730600000004332185">
-                        BPER Banca di Luserna San Giovanni
-                    </option>
-                    <option value="Poste Italiane - IBAN IT04B0760110200001078221247">
-                        Poste Italiane
-                    </option>
+                    <option value="0">Esente (0%)</option>
                 </select>
             </div>
         </div>
 
-        <div style="margin-top:0.5rem;">
-            <button type="submit" class="btn btn-primary">Crea fattura →</button>
+        <div class="form-group">
+            <label>Banca di accredito *</label>
+            <select name="banca_id" required>
+                {% for b in banche %}
+                <option value="{{ b.id }}">{{ b.nome }}</option>
+                {% endfor %}
+            </select>
         </div>
 
+        <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center; margin-top:1rem;">Crea fattura →</button>
     </form>
 </div>
 
 <script>
-// Imposta data di oggi
-document.getElementById("data_fattura").valueAsDate = new Date();
-
-function toggleIva() {
-    const tipo = document.getElementById("tipo").value;
-    const ivaSelect = document.getElementById("regime_iva");
-    ivaSelect.disabled = tipo === "FORNITURA";
-    if (tipo === "FORNITURA") ivaSelect.value = "22";
+function toggleVistaCliente() {
+    const bottoni = document.getElementById("cliente_bottoni");
+    const ricerca = document.getElementById("cliente_ricerca");
+    const btn = document.getElementById("btn_toggle_cliente");
+    
+    if (bottoni.style.display !== "none") {
+        bottoni.style.display = "none";
+        ricerca.style.display = "block";
+        btn.textContent = "📋 Vista bottoni";
+    } else {
+        bottoni.style.display = "flex";
+        ricerca.style.display = "none";
+        btn.textContent = "📋 Vista ricerca";
+    }
 }
 
-// Toggle vista clienti
-let vistaBottoniC = false;
-function toggleVistaClienti() {
-    vistaBottoniC = !vistaBottoniC;
-    document.getElementById("vista_ricerca_c").style.display = vistaBottoniC ? "none" : "block";
-    document.getElementById("vista_bottoni_c").style.display = vistaBottoniC ? "flex" : "none";
-    document.getElementById("lbl_toggle_c").textContent = vistaBottoniC ? "Vista ricerca" : "Vista bottoni";
-    // Reset selezione
-    document.getElementById("cliente_id").value = "";
-    document.getElementById("cliente_search").value = "";
-    document.getElementById("cliente_selezionato").style.display = "none";
-    document.querySelectorAll("[id^='btn_c_']").forEach(b => b.style.background = "white");
-}
-
-function selezionaCliente(id, nome) {
-    document.getElementById("cliente_id").value = id;
-    const info = document.getElementById("cliente_selezionato");
-    info.textContent = "✓ " + nome;
-    info.style.display = "block";
-    // Evidenzia bottone selezionato
-    document.querySelectorAll("[id^='btn_c_']").forEach(b => {
+function selezionaClienteBottoni(id, elemento) {
+    document.getElementById("cliente_id_hidden").value = id;
+    document.querySelectorAll(".btn-seleziona-cliente").forEach(b => {
         b.style.background = "white";
         b.style.borderColor = "#d0d5dd";
-        b.style.color = "#1a1a2e";
+        b.style.color = "initial";
     });
-    const btn = document.getElementById("btn_c_" + id);
-    if (btn) {
-        btn.style.background = "#1a1a2e";
-        btn.style.borderColor = "#1a1a2e";
-        btn.style.color = "white";
-    }
+    elemento.style.background = "#1a1a2e";
+    elemento.style.borderColor = "#1a1a2e";
+    elemento.style.color = "white";
 }
 
-// Autocomplete clienti (vista ricerca)
-function setupAutocomplete() {
-    const input = document.getElementById("cliente_search");
-    const hiddenInput = document.getElementById("cliente_id");
-    const list = document.getElementById("cliente_list");
-    const clienti = JSON.parse(document.getElementById("clienti_json").textContent);
+document.addEventListener("DOMContentLoaded", function() {
+    const input = document.getElementById("search_cliente_input");
+    const lista = document.getElementById("lista_clienti_autocomplete");
+    const items = document.querySelectorAll(".item-cliente-search");
+    const hidden = document.getElementById("cliente_id_hidden");
 
-    input.addEventListener("input", function() {
-        const query = this.value.toLowerCase().trim();
-        list.innerHTML = "";
-        hiddenInput.value = "";
-        if (query.length === 0) { list.style.display = "none"; return; }
-        const filtrati = clienti.filter(c => c.nome.toLowerCase().includes(query));
-        if (filtrati.length === 0) { list.style.display = "none"; return; }
-        filtrati.forEach(function(c) {
-            const div = document.createElement("div");
-            div.textContent = c.nome;
-            div.addEventListener("click", function() {
-                input.value = c.nome;
-                hiddenInput.value = c.id;
-                const info = document.getElementById("cliente_selezionato");
-                info.textContent = "✓ " + c.nome;
-                info.style.display = "block";
-                list.style.display = "none";
+    if (input) {
+        input.addEventListener("input", function() {
+            const query = this.value.toLowerCase().trim();
+            if (!query) { lista.style.display = "none"; return; }
+            
+            let contatore = 0;
+            items.forEach(item => {
+                if (item.getAttribute("data-nome").includes(query)) {
+                    item.style.display = "block";
+                    contatore++;
+                } else {
+                    item.style.display = "none";
+                }
             });
-            list.appendChild(div);
+            lista.style.display = contatore > 0 ? "block" : "none";
         });
-        list.style.display = "block";
-    });
 
-    document.addEventListener("click", function(e) {
-        if (!input.contains(e.target) && !list.contains(e.target)) list.style.display = "none";
-    });
-}
+        items.forEach(item => {
+            item.addEventListener("click", function() {
+                input.value = this.textContent.trim();
+                hidden.value = this.getAttribute("data-id");
+                lista.style.display = "none";
+            });
+        });
 
-function validateForm() {
-    if (!document.getElementById("cliente_id").value) {
-        alert("Seleziona un cliente.");
-        return false;
+        document.addEventListener("click", function(e) {
+            if (!input.contains(e.target) && !lista.contains(e.target)) {
+                lista.style.display = "none";
+            }
+        });
     }
-    return true;
-}
-
-window.onload = function() {
-    toggleIva();
-    setupAutocomplete();
-}
+});
 </script>
 
 {% endblock %}
