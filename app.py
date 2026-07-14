@@ -257,7 +257,7 @@ def nuova_fattura():
     else:
         prossimo_numero = "1"
 
-    from datetime import datetime, date
+    from datetime import date
     oggi = date.today().isoformat()
     cur.close()
     return_db(db)
@@ -342,7 +342,7 @@ def aggiorna_fattura_ajax(id):
     db = get_db()
     cur = db.cursor()
     cur.execute("""
-        UPDATE fattures SET
+        UPDATE fatture SET
             stato_pagamento = %s,
             data_scadenza = %s,
             data_pagamento = %s,
@@ -441,12 +441,14 @@ def fattura_dettaglio(id):
     cur.execute("""
         SELECT f.*, c.nome AS cliente_nome, c.indirizzo,
                c.partita_iva, c.codice_fiscale, c.codice_sdi, c.pec
+        FROM fatture f
+        JOIN clienti c ON c.id = f.cliente_id
         WHERE f.id = %s
     """, (id,))
     fattura = cur.fetchone()
     cur.execute("SELECT * FROM righe_fattura WHERE fattura_id=%s ORDER BY id ASC", (id,))
     righe = cur.fetchall()
-    cur.execute("SELECT * FROM prodotti ORDER BY nome", )
+    cur.execute("SELECT * FROM prodotti ORDER BY nome")
     prodotti = cur.fetchall()
     cur.execute("SELECT * FROM ddt WHERE fattura_id=%s ORDER BY id ASC", (id,))
     ddt_list = cur.fetchall()
@@ -599,7 +601,7 @@ def nuova_nota():
     db.commit()
     cur.close()
     return_db(db)
-    return jsonify({"success": True, "id": nuevo_id})
+    return jsonify({"success": True, "id": nuovo_id})
 
 @app.route("/nota/<int:id>")
 @login_required
@@ -637,7 +639,6 @@ def elimina_nota(id):
     cur.close()
     return_db(db)
     return jsonify({"success": True})
-
 
 # =========================
 # PDF

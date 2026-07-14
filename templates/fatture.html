@@ -51,7 +51,8 @@
             {% for f in fatture %}
             {% set data_fmt = f.data[8:10] + '/' + f.data[5:7] + '/' + f.data[0:4] if f.data else '—' %}
             {% set scad_fmt = f.data_scadenza[8:10] + '/' + f.data_scadenza[5:7] + '/' + f.data_scadenza[0:4] if f.data_scadenza else '—' %}
-            <tr data-cliente="{{ f.cliente_nome|lower }}"
+            <tr class="riga-dati" 
+                data-cliente="{{ f.cliente_nome|lower }}"
                 data-stato="{{ f.stato_pagamento or 'Non pagata' }}"
                 data-tipo="{{ f.tipo }}">
                 <td><strong>{{ f.numero }}</strong></td>
@@ -97,11 +98,15 @@
                 </td>
             </tr>
             {% endfor %}
+            
+            <!-- Spostato dentro la tabella per mantenere coerente il layout -->
+            <tr id="nessun_risultato" style="display:none;">
+                <td colspan="9" style="text-align:center; color:#9ca3af; padding:2rem;">
+                    Nessuna fattura corrisponde ai filtri impostati.
+                </td>
+            </tr>
         </tbody>
     </table>
-    <div id="nessun_risultato" style="display:none; text-align:center; color:#9ca3af; padding:2rem;">
-        Nessuna fattura corrisponde ai filtri.
-    </div>
 </div>
 
 <script>
@@ -109,20 +114,30 @@ function filtraFatture() {
     var cliente = document.getElementById("filtro_cliente").value.toLowerCase().trim();
     var stato = document.getElementById("filtro_stato").value;
     var tipo = document.getElementById("filtro_tipo").value;
-    var righe = document.querySelectorAll("#tabella_fatture tbody tr");
+    
+    // Seleziona solo le righe che contengono effettivamente dati di fattura
+    var righe = document.querySelectorAll("#tabella_fatture tbody tr.riga-dati");
     var visibili = 0;
+    
     righe.forEach(function(riga) {
         var matchCliente = !cliente || (riga.dataset.cliente && riga.dataset.cliente.includes(cliente));
         var matchStato = !stato || riga.dataset.stato === stato;
         var matchTipo = !tipo || riga.dataset.tipo === tipo;
+        
         if (matchCliente && matchStato && matchTipo) {
             riga.style.display = "";
+            visibles = true;
             visibili++;
         } else {
             riga.style.display = "none";
         }
     });
-    document.getElementById("nessun_risultato").style.display = visibili === 0 ? "block" : "none";
+    
+    // Mostra/Nasconde la riga speciale di avviso interno alla tabella
+    var avvisoNessunRisultato = document.getElementById("nessun_risultato");
+    if (avvisoNessunRisultato) {
+        avvisoNessunRisultato.style.display = (righe.length > 0 && visibili === 0) ? "" : "none";
+    }
 }
 
 function resetFiltri() {
