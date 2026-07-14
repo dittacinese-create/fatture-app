@@ -201,30 +201,36 @@
         </button>
 
         <!-- FORM RICERCA TRADIZIONALE -->
-        <form method="POST" action="/add_riga_prodotto" id="form_prod_{{ ddt.id }}">
-            <input type="hidden" name="fattura_id" value="{{ fattura.id }}">
-            <input type="hidden" name="ddt_id" value="{{ ddt.id }}">
-            <input type="hidden" name="prodotto_id" id="prod_id_{{ ddt.id }}">
-            <input type="hidden" name="quantita" id="qty_hidden_{{ ddt.id }}">
-            <input type="hidden" name="prezzo_override" id="prezzo_hidden_{{ ddt.id }}">
-
-            <!-- VISTA RICERCA -->
-            <div id="vista_ricerca_{{ ddt.id }}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                <div class="autocomplete-wrapper">
-                    <input type="text" id="prod_search_{{ ddt.id }}" placeholder="Cerca prodotto..." autocomplete="off">
-                    <div class="autocomplete-list" id="prod_list_{{ ddt.id }}"></div>
-                </div>
-                <input type="number" step="0.01" placeholder="Q.tà" id="qty_ricerca_{{ ddt.id }}"
-                       class="campo-inline" style="width:80px;">
-                <span id="um_ricerca_{{ ddt.id }}" style="font-size:13px; color:#6b7280;"></span>
-                <input type="number" step="0.01" placeholder="Prezzo/u." id="prezzo_ricerca_{{ ddt.id }}"
-                       class="campo-inline" style="width:90px;">
-                <button type="button" onclick="submitProdotto({{ ddt.id }})" class="btn btn-primary btn-sm">+ Aggiungi</button>
+        <div id="vista_ricerca_{{ ddt.id }}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <div class="autocomplete-wrapper">
+                <input type="text" id="prod_search_{{ ddt.id }}" placeholder="Cerca prodotto..." autocomplete="off">
+                <div class="autocomplete-list" id="prod_list_{{ ddt.id }}"></div>
             </div>
-        </form>
+            <input type="number" step="0.01" placeholder="Q.tà" id="qty_ricerca_{{ ddt.id }}"
+                   class="campo-inline" style="width:80px;">
+            <span id="um_ricerca_{{ ddt.id }}" style="font-size:13px; color:#6b7280;"></span>
+            <input type="number" step="0.01" placeholder="Prezzo/u." id="prezzo_ricerca_{{ ddt.id }}"
+                   class="campo-inline" style="width:90px;">
+            <input type="hidden" id="prod_id_{{ ddt.id }}">
+            <button type="button" id="btn_ricerca_add_{{ ddt.id }}" onclick="submitProdotto({{ ddt.id }}, {{ fattura.id }})" class="btn btn-primary btn-sm">+ Aggiungi</button>
+        </div>
 
         <!-- VISTA BOTTONI MULTI-SELEZIONE (JS ASINCRONO) -->
         <div id="vista_bottoni_{{ ddt.id }}" style="display:none;">
+            <!-- SPOSTATO SOPRA: Elenco temporaneo (Carrello d'attesa) -->
+            <div id="carrello_container_{{ ddt.id }}" style="display:none; background:#f8fafc; border:1px solid #e2e8f0; padding:12px; border-radius:8px; margin-bottom:12px;">
+                <h4 style="font-size:12px; text-transform:uppercase; color:#64748b; margin-top:0; margin-bottom:8px; font-weight:700;">Prodotti pronti da inserire:</h4>
+                <div id="carrello_righe_{{ ddt.id }}" style="display:flex; flex-direction:column; gap:8px;">
+                    <!-- Righe generate via JavaScript -->
+                </div>
+                <div style="margin-top:12px; text-align:right;">
+                    <button type="button" onclick="inviaProdottiMultipli({{ ddt.id }}, {{ fattura.id }})" id="btn_invia_multiplo_{{ ddt.id }}" class="btn btn-primary btn-sm">
+                        📥 Inserisci nel DDT (<span id="carrello_conteggio_{{ ddt.id }}">0</span> prodotti)
+                    </button>
+                </div>
+            </div>
+
+            <!-- Griglia bottoni sotto il carrello -->
             <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
                 {% for p in prodotti %}
                 <button type="button"
@@ -236,19 +242,6 @@
                     <span style="color:#6b7280; font-size:11px;">€{{ "%.2f"|format(p.prezzo_base) }} / {{ p.unita_misura }}</span>
                 </button>
                 {% endfor %}
-            </div>
-
-            <!-- Elenco temporaneo (Carrello d'attesa) -->
-            <div id="carrello_container_{{ ddt.id }}" style="display:none; background:#f8fafc; border:1px solid #e2e8f0; padding:12px; border-radius:8px; margin-bottom:10px;">
-                <h4 style="font-size:12px; text-transform:uppercase; color:#64748b; margin-top:0; margin-bottom:8px; font-weight:700;">Prodotti pronti da inserire:</h4>
-                <div id="carrello_righe_{{ ddt.id }}" style="display:flex; flex-direction:column; gap:8px;">
-                    <!-- Righe generate via JavaScript -->
-                </div>
-                <div style="margin-top:12px; text-align:right;">
-                    <button type="button" onclick="inviaProdottiMultipli({{ ddt.id }}, {{ fattura.id }})" id="btn_invia_multiplo_{{ ddt.id }}" class="btn btn-primary btn-sm">
-                        📥 Inserisci nel DDT (<span id="carrello_conteggio_{{ ddt.id }}">0</span> prodotti)
-                    </button>
-                </div>
             </div>
         </div>
     </div>
@@ -473,18 +466,41 @@ function toggleVistaProdotti(ddt_id) {
     document.getElementById("prod_id_" + ddt_id).value = "";
 }
 
-// ========================
-// AGGIUNGI PRODOTTO - VISTA RICERCA
-// ========================
-function submitProdotto(ddt_id) {
+// ============================================
+// AGGIUNGI PRODOTTO - VISTA RICERCA VELOCIZZATA (AJAX)
+// ============================================
+async function submitProdotto(ddt_id, fattura_id) {
     const prod_id = document.getElementById("prod_id_" + ddt_id).value;
     const qty = document.getElementById("qty_ricerca_" + ddt_id).value;
     const prezzo = document.getElementById("prezzo_ricerca_" + ddt_id).value;
+    const btn = document.getElementById("btn_ricerca_add_" + ddt_id);
+
     if (!prod_id) { alert("Seleziona un prodotto dalla lista."); return; }
     if (!qty || parseFloat(qty) <= 0) { alert("Inserisci la quantità."); return; }
-    document.getElementById("qty_hidden_" + ddt_id).value = qty;
-    document.getElementById("prezzo_hidden_" + ddt_id).value = prezzo || "";
-    document.getElementById("form_prod_" + ddt_id).submit();
+    
+    // Disattiva bottone per feedback immediato
+    btn.disabled = true;
+    btn.textContent = "Inserimento...";
+
+    const formData = new FormData();
+    formData.append("fattura_id", fattura_id);
+    formData.append("ddt_id", ddt_id);
+    formData.append("prodotto_id", prod_id);
+    formData.append("quantita", qty);
+    formData.append("prezzo_override", prezzo || "");
+
+    try {
+        await fetch("/add_riga_prodotto", {
+            method: "POST",
+            body: formData
+        });
+        window.location.reload();
+    } catch (e) {
+        console.error("Errore salvataggio rapido:", e);
+        alert("Si è verificato un errore durante l'inserimento.");
+        btn.disabled = false;
+        btn.textContent = "+ Aggiungi";
+    }
 }
 
 // ========================
