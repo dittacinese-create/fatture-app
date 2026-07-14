@@ -130,6 +130,81 @@ def delete_cliente(id):
     return redirect("/clienti")
 
 # =========================
+# DASHBOARD ANALISI
+# =========================
+
+@app.route("/dashboard")
+@login_required
+def dashboard():
+    db = get_db()
+    cur = db.cursor()
+    
+    # 1. Statistiche generali (Fatturato Totale, Incassato, In Attesa, Non Pagato)
+    # Calcoliamo l'imponibile o il totale direttamente a seconda di come gestisci i dati.
+    # Qui usiamo f.totale (aggiornato quando la fattura viene CHIUSA)
+    cur.execute("""
+        SELECT 
+            COALESCE(SUM(totale), 0) as totale_fatturato,
+            COALESCE(SUM(CASE WHEN stato_pagamento = 'Pagata' THEN totale ELSE 0 END), 0) as totale_incassato,
+            COALESCE(SUM(CASE WHEN stato_pagamento = 'In attesa' THEN totale ELSE 0 END), 0) as totale_attesa,
+            COALESCE(SUM(CASE WHEN stato_pagamento = 'Non pagata' OR stato_pagamento IS NULL THEN totale ELSE 0 END), 0) as totale_non_pagato
+        FROM fatture
+        WHERE stato = 'CHIUSA'
+    """)
+    stats = cur.fetchone()
+
+    # 2. Numero di fatture totali, bozze e chiuse
+    cur.execute("""
+        SELECT 
+            COUNT(*) as totale_invii,
+            COUNT(CASE WHEN stato = 'BOZZA' THEN 1 END) as bozze,
+            COUNT(CASE WHEN stato = 'CHIUSA' THEN 1 END) as chiuse
+        FROM fatture
+    """)
+    conteggi = cur.fetchone()
+
+    # 3. Fatturato mensile (ultimi 6 mesi) - Adatto sia per PostgreSQL che SQLite
+    # Raggruppa per Anno-Mese ordinando cronologicamente
+    cur.execute("""
+        SELECT 
+            SUBSTRING(data, 1, 7) as mese,
+            COALESCE(SUM(totale), 0) as totale
+        FROM fatture
+        WHERE stato = 'CHIUSA' AND data IS NOT NULL
+        GROUP BY SUBSTRING(data, 1, 7)
+        ORDER BY mese DESC
+        LIMIT 6
+    """)
+    trend_mensile = cur.fetchall()
+    # Invertiamo l'ordine per visualizzarlo correttamente da sinistra a destra nel grafico
+    trend_mensile = trend_mensile[::-1]
+
+    # 4. Top Clienti per fatturato
+    cur.execute("""
+        SELECT 
+            c.nome as cliente_nome,
+            COALESCE(SUM(f.totale), 0) as totale
+        FROM fatture f
+        JOIN clienti c ON c.id = f.cliente_id
+        WHERE f.stato = 'CHIUSA'
+        GROUP BY c.id, c.nome
+        ORDER BY totale DESC
+        LIMIT 5
+    """)
+    top_clienti = cur.fetchall()
+
+    cur.close()
+    return_db(db)
+
+    return render_template(
+        "dashboard.html",
+        stats=stats,
+        conteggi=conteggi,
+        trend_mensile=trend_mensile,
+        top_clienti=top_clienti
+    )
+
+# =========================
 # PRODOTTI
 # =========================
 
@@ -695,6 +770,73 @@ def pdf(id):
     response.headers["Content-Disposition"] = f"attachment; filename=fattura_{numero_safe}.pdf"
     return response
 
+@app.route("/dashboard")
+@login_required # Rimuovilo se non usi un sistema di login
+def dashboard():
+    db = get_db()
+    cur = db.cursor()
+    
+    # 1. Statistiche generali (Fatturato Totale, Incassato, In Attesa, Non Pagato)
+    cur.execute("""
+        SELECT 
+            COALESCE(SUM(totale), 0) as totale_fatturato,
+            COALESCE(SUM(CASE WHEN stato_pagamento = 'Pagata' THEN totale ELSE 0 END), 0) as totale_incassato,
+            COALESCE(SUM(CASE WHEN stato_pagamento = 'In attesa' THEN totale ELSE 0 END), 0) as totale_attesa,
+            COALESCE(SUM(CASE WHEN stato_pagamento = 'Non pagata' OR stato_pagamento IS NULL THEN totale ELSE 0 END), 0) as totale_non_pagato
+        FROM fatture
+        WHERE stato = 'CHIUSA'
+    """)
+    stats = cur.fetchone()
+
+    # 2. Numero di fatture totali, bozze e chiuse
+    cur.execute("""
+        SELECT 
+            COUNT(*) as totale_invii,
+            COUNT(CASE WHEN stato = 'BOZZA' THEN 1 END) as bozze,
+            COUNT(CASE WHEN stato = 'CHIUSA' THEN 1 END) as chiuse
+        FROM fatture
+    """)
+    conteggi = cur.fetchone()
+
+    # 3. Fatturato mensile (ultimi 6 mesi)
+    cur.execute("""
+        SELECT 
+            SUBSTRING(data, 1, 7) as mese,
+            COALESCE(SUM(totale), 0) as totale
+        FROM fatture
+        WHERE stato = 'CHIUSA' AND data IS NOT NULL
+        GROUP BY SUBSTRING(data, 1, 7)
+        ORDER BY mese DESC
+        LIMIT 6
+    """)
+    trend_mensile = cur.fetchall()
+    trend_mensile = trend_mensile[::-1]
+
+    # 4. Top Clienti per fatturato
+    cur.execute("""
+        SELECT 
+            c.nome as cliente_nome,
+            COALESCE(SUM(f.totale), 0) as totale
+        FROM fatture f
+        JOIN clienti c ON c.id = f.cliente_id
+        WHERE f.stato = 'CHIUSA'
+        GROUP BY c.id, c.nome
+        ORDER BY totale DESC
+        LIMIT 5
+    """)
+    top_clienti = cur.fetchall()
+
+    cur.close()
+    return_db(db) # Sostituisci o adatta questo comando con il tuo metodo di chiusura/rilascio connessione del DB
+
+    return render_template(
+        "dashboard.html",
+        stats=stats,
+        conteggi=conteggi,
+        trend_mensile=trend_mensile,
+        top_clienti=top_clienti
+    )
+    
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5001))
     app.run(debug=False, host="0.0.0.0", port=port)
