@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="topbar">
+    <h1>Dashboard Analisi</h1>
+    <span style="color: #6b7280; font-size: 14px;">Panoramica delle performance finanziarie</span>
+</div>
+
+<!-- KPI CARDS -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.25rem; margin-bottom: 2rem;">
+    <!-- Card 1 -->
+    <div style="background: #fff; padding: 1.5rem; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <div style="color: #6b7280; font-size: 12px; font-weight: 600; text-transform: uppercase; margin-bottom: 0.5rem;">Fatturato Totale (Chiuso)</div>
+        <div style="font-size: 24px; font-weight: 700; color: #111827;">€ {{ "%.2f"|format(stats.totale_fatturato) }}</div>
+        <div style="color: #059669; font-size: 12px; margin-top: 0.25rem;">Su {{ conteggi.chiuse }} fatture chiuse</div>
+    </div>
+    <!-- Card 2 -->
+    <div style="background: #fff; padding: 1.5rem; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <div style="color: #6b7280; font-size: 12px; font-weight: 600; text-transform: uppercase; margin-bottom: 0.5rem;">Totale Incassato</div>
+        <div style="font-size: 24px; font-weight: 700; color: #059669;">€ {{ "%.2f"|format(stats.totale_incassato) }}</div>
+        <div style="color: #6b7280; font-size: 12px; margin-top: 0.25rem;">Stato pagamento: Pagata</div>
+    </div>
+    <!-- Card 3 -->
+    <div style="background: #fff; padding: 1.5rem; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <div style="color: #6b7280; font-size: 12px; font-weight: 600; text-transform: uppercase; margin-bottom: 0.5rem;">In Attesa / Non Pagate</div>
+        <div style="font-size: 24px; font-weight: 700; color: #dc2626;">€ {{ "%.2f"|format(stats.totale_attesa + stats.totale_non_pagato) }}</div>
+        <div style="color: #6b7280; font-size: 12px; margin-top: 0.25rem;">Da riscuotere</div>
+    </div>
+    <!-- Card 4 -->
+    <div style="background: #fff; padding: 1.5rem; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <div style="color: #6b7280; font-size: 12px; font-weight: 600; text-transform: uppercase; margin-bottom: 0.5rem;">Bozze Pendenti</div>
+        <div style="font-size: 24px; font-weight: 700; color: #d97706;">{{ conteggi.bozze }}</div>
+        <div style="color: #6b7280; font-size: 12px; margin-top: 0.25rem;">Fatture ancora da chiudere</div>
+    </div>
+</div>
+
+<!-- GRAFICI -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+    <!-- Grafico 1: Trend Fatturato -->
+    <div style="background: #fff; padding: 1.5rem; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <h3 style="margin-top: 0; margin-bottom: 1.5rem; font-size: 16px; color: #111827;">Andamento Fatturato (Ultimi Mesi)</h3>
+        <div style="position: relative; height: 300px; width: 100%;">
+            <canvas id="chartTrend"></canvas>
+        </div>
+    </div>
+
+    <!-- Grafico 2: Stato Pagamenti (Donut) -->
+    <div style="background: #fff; padding: 1.5rem; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <h3 style="margin-top: 0; margin-bottom: 1.5rem; font-size: 16px; color: #111827;">Ripartizione Pagamenti</h3>
+        <div style="position: relative; height: 300px; width: 100%; display: flex; justify-content: center;">
+            <canvas id="chartPagamenti"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- TABELLA TOP CLIENTI -->
+<div class="table-wrap" style="margin-top: 1.5rem;">
+    <h3 style="padding: 1.25rem 1.25rem 0.5rem 1.25rem; margin: 0; font-size: 16px; color: #111827;">I 5 Clienti Miggiori per Fatturato</h3>
+    <table style="margin-top: 0.5rem;">
+        <thead>
+            <tr>
+                <th>Cliente</th>
+                <th style="text-align: right;">Totale Fatturato Chiuso</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for c in top_clienti %}
+            <tr>
+                <td><strong>{{ c.cliente_nome }}</strong></td>
+                <td style="text-align: right; font-weight: bold; color: #10b981;">€ {{ "%.2f"|format(c.totale) }}</td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="2" style="text-align: center; color: #9ca3af; padding: 1.5rem;">
+                    Nessun dato disponibile sui clienti.
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Carica Chart.js tramite CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    // 1. Dati Trend Mensile dal Backend
+    const trendLabels = [{% for m in trend_mensile %}"{{ m.mese }}"{% if not loop.last %}, {% endif %}{% endfor %}];
+    const trendData = [{% for m in trend_mensile %}{{ m.totale }}{% if not loop.last %}, {% endif %}{% endfor %}];
+
+    // Rendering Grafico a Barre (Trend)
+    const ctxTrend = document.getElementById('chartTrend').getContext('2d');
+    new Chart(ctxTrend, {
+        type: 'bar',
+        data: {
+            labels: trendLabels.length ? trendLabels : ['Nessun Dato'],
+            datasets: [{
+                label: 'Fatturato Mensile (€)',
+                data: trendData.length ? trendData : [0],
+                backgroundColor: 'rgba(59, 130, 246, 0.85)', // Azzurro/Blu
+                borderColor: 'rgba(59, 130, 246, 1)',
+                borderWidth: 1,
+                borderRadius: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) { return '€ ' + value; }
+                    }
+                }
+            },
+            plugins: {
+                legend: { display: false }
+            }
+        }
+    });
+
+    // 2. Dati Stato Pagamenti dal Backend
+    const pagato = {{ stats.totale_incassato }};
+    const attesa = {{ stats.totale_attesa }};
+    const nonPagato = {{ stats.totale_non_pagato }};
+
+    // Rendering Grafico a Torta / Ciambella
+    const ctxPagamenti = document.getElementById('chartPagamenti').getContext('2d');
+    new Chart(ctxPagamenti, {
+        type: 'doughnut',
+        data: {
+            labels: ['Pagato', 'In Attesa', 'Non Pagato'],
+            datasets: [{
+                data: [pagato, attesa, nonPagato],
+                backgroundColor: [
+                    '#10b981', // Verde
+                    '#f59e0b', // Giallo/Arancio
+                    '#ef4444'  // Rosso
+                ],
+                borderWidth: 2,
+                hoverOffset: 4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+});
+</script>
+
+{% endblock %}

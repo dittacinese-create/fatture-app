@@ -57,6 +57,12 @@
         <a href="/fatture" class="{{ 'active' if request.path.startswith('/fattur') else '' }}" onclick="closeMenu()">
             <span class="icon">📄</span> Fatture
         </a>
+        
+        <!-- NUOVA VOCE: DASHBOARD ANALISI -->
+        <a href="/dashboard" class="{{ 'active' if request.path == '/dashboard' else '' }}" onclick="closeMenu()">
+            <span class="icon">📊</span> Dashboard
+        </a>
+        
         <a href="/clienti" class="{{ 'active' if request.path.startswith('/client') else '' }}" onclick="closeMenu()">
             <span class="icon">👥</span> Clienti
         </a>
@@ -67,6 +73,11 @@
             <span class="icon">📝</span> Note
         </a>
     </nav>
+    <div style="padding:1rem 1.25rem; border-top:1px solid rgba(255,255,255,0.08); margin-top:auto;">
+        <a href="/logout" style="display:flex; align-items:center; gap:10px; color:rgba(255,255,255,0.5); text-decoration:none; font-size:13px;">
+            <span>🚪</span> Esci
+        </a>
+    </div>
 </div>
 
 <div class="main">
