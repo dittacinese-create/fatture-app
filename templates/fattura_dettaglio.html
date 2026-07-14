@@ -35,7 +35,7 @@
 .campo-inline { padding:4px 8px; border:1px solid #d0d5dd; border-radius:6px; font-size:13px; }
 </style>
 
-<!-- INFO FATTURA -->
+<!-- INFO FATTURA & DATI PAGAMENTO (Salva Unificato) -->
 <div class="card">
     <div class="form-row" style="flex-wrap:wrap; gap:1.5rem; align-items:flex-end;">
         <div>
@@ -71,13 +71,9 @@
             <div style="font-size:12px; color:#6b7280; margin-bottom:3px;">IVA</div>
             <div style="font-weight:500;">{{ fattura.regime_iva }}%</div>
         </div>
-        <div style="display:flex; align-items:flex-end; padding-bottom:2px; gap:8px;">
-            <button onclick="salvaTestataFattura()" class="btn btn-primary btn-sm" type="button">Salva</button>
-            <span id="msg_testata" style="display:none; color:#059669; font-size:12px; font-weight:600;">✓</span>
-        </div>
     </div>
 
-    <!-- CAMPI PAGAMENTO -->
+    <!-- CAMPI PAGAMENTO E UNICO TASTO SALVA -->
     <div style="margin-top:1.2rem; border-top:1px solid #e8ecf0; padding-top:1.2rem;">
         <div class="form-row" style="flex-wrap:wrap; align-items:flex-end;">
             <div class="form-group" style="min-width:160px;">
@@ -101,7 +97,7 @@
                 <input type="text" id="note" value="{{ fattura.note or '' }}" placeholder="es. Cantiere di Torino">
             </div>
             <div style="padding-bottom:1rem; display:flex; align-items:center; gap:0.75rem;">
-                <button onclick="salvaFattura()" class="btn btn-primary btn-sm" type="button">Salva</button>
+                <button onclick="salvaFatturaUnificato()" class="btn btn-primary btn-sm" type="button" id="btn_salva_unificato">Salva</button>
                 <span id="salva_status" style="font-size:13px; color:#059669; font-weight:600; display:none;">✓ Salvato</span>
             </div>
         </div>
@@ -200,7 +196,20 @@
             🔀 <span id="lbl_toggle_{{ ddt.id }}">Vista bottoni</span>
         </button>
 
-        <!-- FORM RICERCA TRADIZIONALE -->
+        <!-- AREA DI SELEZIONE MULTIPLA CONDIVISA (SOPRA AI METODI DI INPUT) -->
+        <div id="carrello_container_{{ ddt.id }}" style="display:none; background:#f8fafc; border:1px solid #e2e8f0; padding:12px; border-radius:8px; margin-bottom:12px;">
+            <h4 style="font-size:12px; text-transform:uppercase; color:#64748b; margin-top:0; margin-bottom:8px; font-weight:700;">Prodotti pronti da inserire:</h4>
+            <div id="carrello_righe_{{ ddt.id }}" style="display:flex; flex-direction:column; gap:8px;">
+                <!-- Righe generate via JavaScript -->
+            </div>
+            <div style="margin-top:12px; text-align:right;">
+                <button type="button" onclick="inviaProdottiMultipli({{ ddt.id }}, {{ fattura.id }})" id="btn_invia_multiplo_{{ ddt.id }}" class="btn btn-primary btn-sm">
+                    📥 Inserisci nel DDT (<span id="carrello_conteggio_{{ ddt.id }}">0</span> prodotti)
+                </button>
+            </div>
+        </div>
+
+        <!-- METODO 1: RICERCA CON AUTOCOMPLETE (Aggiunge alla coda di inserimento multiplo) -->
         <div id="vista_ricerca_{{ ddt.id }}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
             <div class="autocomplete-wrapper">
                 <input type="text" id="prod_search_{{ ddt.id }}" placeholder="Cerca prodotto..." autocomplete="off">
@@ -212,25 +221,11 @@
             <input type="number" step="0.01" placeholder="Prezzo/u." id="prezzo_ricerca_{{ ddt.id }}"
                    class="campo-inline" style="width:90px;">
             <input type="hidden" id="prod_id_{{ ddt.id }}">
-            <button type="button" id="btn_ricerca_add_{{ ddt.id }}" onclick="submitProdotto({{ ddt.id }}, {{ fattura.id }})" class="btn btn-primary btn-sm">+ Aggiungi</button>
+            <button type="button" onclick="aggiungiAzioneRicercaAlCarrello({{ ddt.id }})" class="btn btn-primary btn-sm">+ Seleziona</button>
         </div>
 
-        <!-- VISTA BOTTONI MULTI-SELEZIONE (JS ASINCRONO) -->
+        <!-- METODO 2: GRIGLIA BOTTONI MULTI-SELEZIONE (Niente carrello duplicato, usa lo stesso in alto) -->
         <div id="vista_bottoni_{{ ddt.id }}" style="display:none;">
-            <!-- SPOSTATO SOPRA: Elenco temporaneo (Carrello d'attesa) -->
-            <div id="carrello_container_{{ ddt.id }}" style="display:none; background:#f8fafc; border:1px solid #e2e8f0; padding:12px; border-radius:8px; margin-bottom:12px;">
-                <h4 style="font-size:12px; text-transform:uppercase; color:#64748b; margin-top:0; margin-bottom:8px; font-weight:700;">Prodotti pronti da inserire:</h4>
-                <div id="carrello_righe_{{ ddt.id }}" style="display:flex; flex-direction:column; gap:8px;">
-                    <!-- Righe generate via JavaScript -->
-                </div>
-                <div style="margin-top:12px; text-align:right;">
-                    <button type="button" onclick="inviaProdottiMultipli({{ ddt.id }}, {{ fattura.id }})" id="btn_invia_multiplo_{{ ddt.id }}" class="btn btn-primary btn-sm">
-                        📥 Inserisci nel DDT (<span id="carrello_conteggio_{{ ddt.id }}">0</span> prodotti)
-                    </button>
-                </div>
-            </div>
-
-            <!-- Griglia bottoni sotto il carrello -->
             <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
                 {% for p in prodotti %}
                 <button type="button"
@@ -355,46 +350,51 @@
 // Oggetto globale per tracciare lo stato delle multi-selezioni per ogni DDT
 const carrelloDDT = {};
 
-// ========================
-// SALVA TESTATA FATTURA
-// ========================
-function salvaTestataFattura() {
-    fetch("/aggiorna_testata/{{ fattura.id }}", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            numero: document.getElementById("edit_numero").value,
-            data: document.getElementById("edit_data").value
-        })
-    }).then(r => r.json()).then(function(d) {
-        if (d.success) {
-            const msg = document.getElementById("msg_testata");
-            msg.style.display = "inline";
-            setTimeout(function() { msg.style.display = "none"; }, 2000);
-        }
-    });
-}
+// ===============================================
+// SALVATAGGIO UNIFICATO (DATI TESTATA + PAGAMENTO)
+// ===============================================
+async function salvaFatturaUnificato() {
+    const btn = document.getElementById("btn_salva_unificato");
+    const s = document.getElementById("salva_status");
+    btn.disabled = true;
+    btn.textContent = "Salvataggio...";
 
-// ========================
-// SALVA PAGAMENTO
-// ========================
-function salvaFattura() {
-    fetch("/aggiorna_fattura_ajax/{{ fattura.id }}", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            stato_pagamento: document.getElementById("stato_pagamento").value,
-            data_scadenza: document.getElementById("data_scadenza").value || null,
-            data_pagamento: document.getElementById("data_pagamento").value || null,
-            note: document.getElementById("note").value || null
-        })
-    }).then(r => r.json()).then(function(d) {
-        if (d.success) {
-            const s = document.getElementById("salva_status");
+    try {
+        // 1. Salva la Testata (Numero e Data)
+        const resTestata = await fetch("/aggiorna_testata/{{ fattura.id }}", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                numero: document.getElementById("edit_numero").value,
+                data: document.getElementById("edit_data").value
+            })
+        });
+
+        // 2. Salva i Campi Pagamento e Note
+        const resPagamento = await fetch("/aggiorna_fattura_ajax/{{ fattura.id }}", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                stato_pagamento: document.getElementById("stato_pagamento").value,
+                data_scadenza: document.getElementById("data_scadenza").value || null,
+                data_pagamento: document.getElementById("data_pagamento").value || null,
+                note: document.getElementById("note").value || null
+            })
+        });
+
+        if (resTestata.ok && resPagamento.ok) {
             s.style.display = "inline";
-            setTimeout(function() { s.style.display = "none"; }, 2000);
+            setTimeout(function() { s.style.display = "none"; }, 2500);
+        } else {
+            alert("Si è verificato un errore durante il salvataggio di alcuni dati.");
         }
-    });
+    } catch (e) {
+        console.error(e);
+        alert("Errore di connessione.");
+    } finally {
+        btn.disabled = false;
+        btn.textContent = "Salva";
+    }
 }
 
 // ========================
@@ -467,45 +467,58 @@ function toggleVistaProdotti(ddt_id) {
 }
 
 // ============================================
-// AGGIUNGI PRODOTTO - VISTA RICERCA VELOCIZZATA (AJAX)
+// AZIONE RICERCA TRADIZIONALE -> AGGIUNGI AL CARRELLO MULTIPLO
 // ============================================
-async function submitProdotto(ddt_id, fattura_id) {
+function aggiungiAzioneRicercaAlCarrello(ddt_id) {
     const prod_id = document.getElementById("prod_id_" + ddt_id).value;
     const qty = document.getElementById("qty_ricerca_" + ddt_id).value;
     const prezzo = document.getElementById("prezzo_ricerca_" + ddt_id).value;
-    const btn = document.getElementById("btn_ricerca_add_" + ddt_id);
 
-    if (!prod_id) { alert("Seleziona un prodotto dalla lista."); return; }
-    if (!qty || parseFloat(qty) <= 0) { alert("Inserisci la quantità."); return; }
-    
-    // Disattiva bottone per feedback immediato
-    btn.disabled = true;
-    btn.textContent = "Inserimento...";
+    if (!prod_id) { alert("Seleziona un prodotto dalla ricerca."); return; }
 
-    const formData = new FormData();
-    formData.append("fattura_id", fattura_id);
-    formData.append("ddt_id", ddt_id);
-    formData.append("prodotto_id", prod_id);
-    formData.append("quantita", qty);
-    formData.append("prezzo_override", prezzo || "");
-
+    let prodottiTutti = [];
     try {
-        await fetch("/add_riga_prodotto", {
-            method: "POST",
-            body: formData
-        });
-        window.location.reload();
+        prodottiTutti = JSON.parse(document.getElementById("prodotti_json").textContent);
     } catch (e) {
-        console.error("Errore salvataggio rapido:", e);
-        alert("Si è verificato un errore durante l'inserimento.");
-        btn.disabled = false;
-        btn.textContent = "+ Aggiungi";
+        console.error("Errore catalogo:", e);
+        return;
     }
+
+    const prodIdNum = parseInt(prod_id);
+    const prodottoTrovato = prodottiTutti.find(p => p.id === prodIdNum);
+    if (!prodottoTrovato) return;
+
+    if (!carrelloDDT[ddt_id]) carrelloDDT[ddt_id] = {};
+
+    // Inserisci o aggiorna nel carrello temporaneo con quantità e prezzo precompilati
+    carrelloDDT[ddt_id][prodIdNum] = {
+        nome: prodottoTrovato.nome,
+        prezzo: prezzo ? parseFloat(prezzo) : prodottoTrovato.prezzo_base,
+        um: prodottoTrovato.unita_misura,
+        qtyDefault: qty ? parseFloat(qty) : ""
+    };
+
+    // Resetta i campi di ricerca per facilitare una nuova ricerca consecutiva
+    document.getElementById("prod_search_" + ddt_id).value = "";
+    document.getElementById("prod_id_" + ddt_id).value = "";
+    document.getElementById("qty_ricerca_" + ddt_id).value = "";
+    document.getElementById("prezzo_ricerca_" + ddt_id).value = "";
+    document.getElementById("um_ricerca_" + ddt_id).textContent = "";
+
+    // Sincronizza lo stato visivo dei bottoni (se l'utente passa alla vista bottoni, vedrà il bottone evidenziato)
+    const btn = document.getElementById("btn_p_" + ddt_id + "_" + prodIdNum);
+    if (btn) {
+        btn.style.background = "#1a1a2e";
+        btn.style.borderColor = "#1a1a2e";
+        btn.style.color = "white";
+    }
+
+    renderizzaCarrello(ddt_id);
 }
 
-// ========================
-// MULTI-SELEZIONE BOTTONI (MOLTI INSIEME)
-// ========================
+// ============================================
+// SELEZIONE TRAMITE BOTTONI (MOLTI INSIEME)
+// ============================================
 function toggleSelezioneProdotto(ddt_id, prod_id) {
     if (!carrelloDDT[ddt_id]) carrelloDDT[ddt_id] = {};
     const btn = document.getElementById("btn_p_" + ddt_id + "_" + prod_id);
@@ -532,7 +545,8 @@ function toggleSelezioneProdotto(ddt_id, prod_id) {
         carrelloDDT[ddt_id][prod_id] = { 
             nome: prodottoTrovato.nome, 
             prezzo: prodottoTrovato.prezzo_base, 
-            um: prodottoTrovato.unita_misura 
+            um: prodottoTrovato.unita_misura,
+            qtyDefault: ""
         };
         
         if (btn) {
@@ -544,6 +558,9 @@ function toggleSelezioneProdotto(ddt_id, prod_id) {
     renderizzaCarrello(ddt_id);
 }
 
+// ========================
+// RE-RENDERIZZAZIONE CARRELLO
+// ========================
 function renderizzaCarrello(ddt_id) {
     const container = document.getElementById("carrello_container_" + ddt_id);
     const wrapperRighe = document.getElementById("carrello_righe_" + ddt_id);
@@ -571,7 +588,8 @@ function renderizzaCarrello(ddt_id) {
 
     prodottiSelezionati.forEach(pId => {
         const p = carrelloDDT[ddt_id][pId];
-        const vQty = vecchiValori[pId] ? vecchiValori[pId].qty : "";
+        // Mantieni i valori già digitati dall'utente nell'input, altrimenti usa i dati impostati alla selezione
+        const vQty = vecchiValori[pId] ? vecchiValori[pId].qty : (p.qtyDefault || "");
         const vPrezzo = vecchiValori[pId] ? vecchiValori[pId].prezzo : p.prezzo;
 
         const row = document.createElement("div");
@@ -588,10 +606,23 @@ function renderizzaCarrello(ddt_id) {
             <input type="number" step="0.01" placeholder="Q.tà" class="campo-inline qty-carrello" style="width:75px;" value="${vQty}">
             <span style="font-size:12px; color:#64748b; width:20px;">${p.um}</span>
             <input type="number" step="0.01" placeholder="Prezzo" class="campo-inline prezzo-carrello" style="width:85px;" value="${vPrezzo}">
-            <button type="button" onclick="toggleSelezioneProdotto(${ddt_id}, ${pId})" style="background:none; border:none; color:#ef4444; cursor:pointer; font-size:16px; padding:0 4px;">&times;</button>
+            <button type="button" onclick="rimuoviDalCarrelloSpecifico(${ddt_id}, ${pId})" style="background:none; border:none; color:#ef4444; cursor:pointer; font-size:16px; padding:0 4px;">&times;</button>
         `;
         wrapperRighe.appendChild(row);
     });
+}
+
+function rimuoviDalCarrelloSpecifico(ddt_id, prod_id) {
+    if (carrelloDDT[ddt_id] && carrelloDDT[ddt_id][prod_id]) {
+        delete carrelloDDT[ddt_id][prod_id];
+        const btn = document.getElementById("btn_p_" + ddt_id + "_" + prod_id);
+        if (btn) {
+            btn.style.background = "white";
+            btn.style.borderColor = "#d0d5dd";
+            btn.style.color = "initial";
+        }
+        renderizzaCarrello(ddt_id);
+    }
 }
 
 async function inviaProdottiMultipli(ddt_id, fattura_id) {
