@@ -2,10 +2,14 @@ from flask import Flask, render_template, request, redirect, make_response, send
 from database import init_db, get_db, return_db
 from config import AZIENDA, PASSWORD_ACCESSO
 from functools import wraps
+from datetime import timedelta
 import os
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "chiave-segreta-fatture-2026")
+
+# Configura la scadenza automatica della sessione (es. 30 minuti di inattività)
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=30)
 
 @app.context_processor
 def inject_request():
@@ -33,6 +37,8 @@ def login():
     errore = False
     if request.method == "POST":
         if request.form.get("password") == PASSWORD_ACCESSO:
+            # Rende la sessione legata al ciclo vitale definito sopra
+            session.permanent = True
             session["logged_in"] = True
             return redirect("/fatture")
         errore = True
@@ -244,7 +250,6 @@ def nuova_fattura():
     ultima = cur.fetchone()
     if ultima:
         try:
-            # Funziona sia con "2026/043" che con "43"
             ultimo_num = int(ultima["numero"].split("/")[-1])
             prossimo_numero = str(ultimo_num + 1)
         except:
@@ -330,7 +335,6 @@ def aggiorna_testata(id):
     return_db(db)
     return jsonify({"success": True})
 
-
 @app.route("/aggiorna_fattura_ajax/<int:id>", methods=["POST"])
 @login_required
 def aggiorna_fattura_ajax(id):
@@ -338,7 +342,7 @@ def aggiorna_fattura_ajax(id):
     db = get_db()
     cur = db.cursor()
     cur.execute("""
-        UPDATE fatture SET
+        UPDATE fattures SET
             stato_pagamento = %s,
             data_scadenza = %s,
             data_pagamento = %s,
@@ -437,8 +441,6 @@ def fattura_dettaglio(id):
     cur.execute("""
         SELECT f.*, c.nome AS cliente_nome, c.indirizzo,
                c.partita_iva, c.codice_fiscale, c.codice_sdi, c.pec
-        FROM fatture f
-        JOIN clienti c ON c.id = f.cliente_id
         WHERE f.id = %s
     """, (id,))
     fattura = cur.fetchone()
@@ -597,7 +599,7 @@ def nuova_nota():
     db.commit()
     cur.close()
     return_db(db)
-    return jsonify({"success": True, "id": nuovo_id})
+    return jsonify({"success": True, "id": nuevo_id})
 
 @app.route("/nota/<int:id>")
 @login_required
