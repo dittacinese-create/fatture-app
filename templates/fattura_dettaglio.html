@@ -127,7 +127,6 @@
 {% for ddt in ddt_list %}
 <div class="ddt-block">
     <h3>
-        <!-- Numero e data DDT modificabili -->
         <span style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
             DDT n.
             <input type="text" id="ddt_numero_{{ ddt.id }}" value="{{ ddt.numero }}"
@@ -192,7 +191,7 @@
             🔀 <span id="lbl_toggle_{{ ddt.id }}">Vista bottoni</span>
         </button>
 
-        <!-- FORM UNICO per aggiungere prodotto -->
+        <!-- FORM RICERCA TRADIZIONALE -->
         <form method="POST" action="/add_riga_prodotto" id="form_prod_{{ ddt.id }}">
             <input type="hidden" name="fattura_id" value="{{ fattura.id }}">
             <input type="hidden" name="ddt_id" value="{{ ddt.id }}">
@@ -213,33 +212,36 @@
                        class="campo-inline" style="width:90px;">
                 <button type="button" onclick="submitProdotto({{ ddt.id }})" class="btn btn-primary btn-sm">+ Aggiungi</button>
             </div>
+        </form>
 
-            <!-- VISTA BOTTONI -->
-            <div id="vista_bottoni_{{ ddt.id }}" style="display:none;">
-                <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
-                    {% for p in prodotti %}
-                    <button type="button"
-                            onclick="selezionaProdotto({{ ddt.id }}, {{ p.id }}, {{ p.prezzo_base }}, {{ p.unita_misura | tojson }})"
-                            id="btn_p_{{ ddt.id }}_{{ p.id }}"
-                            class="campo-inline"
-                            style="cursor:pointer; background:white; padding:8px 12px; border-radius:8px; font-size:12px; text-align:left;">
-                        <strong>{{ p.nome }}</strong><br>
-                        <span style="color:#6b7280; font-size:11px;">€{{ "%.2f"|format(p.prezzo_base) }} / {{ p.unita_misura }}</span>
-                    </button>
-                    {% endfor %}
+        <!-- VISTA BOTTONI MULTI-SELEZIONE (GESTITA IN JS ASINCRONO) -->
+        <div id="vista_bottoni_{{ ddt.id }}" style="display:none;">
+            <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
+                {% for p in prodotti %}
+                <button type="button"
+                        onclick="toggleSelezioneProdotto({{ ddt.id }}, {{ p.id }}, {{ p.prezzo_base }}, {{ p.nome | tojson }}, {{ p.unita_misura | tojson }})"
+                        id="btn_p_{{ ddt.id }}_{{ p.id }}"
+                        class="campo-inline"
+                        style="cursor:pointer; background:white; padding:8px 12px; border-radius:8px; font-size:12px; text-align:left; border:1px solid #d0d5dd; transition: all 0.2s;">
+                    <strong>{{ p.nome }}</strong><br>
+                    <span style="color:#6b7280; font-size:11px;">€{{ "%.2f"|format(p.prezzo_base) }} / {{ p.unita_misura }}</span>
+                </button>
+                {% endfor %}
+            </div>
+
+            <!-- Elenco temporaneo (Carrello d'attesa) -->
+            <div id="carrello_container_{{ ddt.id }}" style="display:none; background:#f8fafc; border:1px solid #e2e8f0; padding:12px; border-radius:8px; margin-bottom:10px;">
+                <h4 style="font-size:12px; text-transform:uppercase; color:#64748b; margin-top:0; margin-bottom:8px; font-weight:700;">Prodotti pronti da inserire:</h4>
+                <div id="carrello_righe_{{ ddt.id }}" style="display:flex; flex-direction:column; gap:8px;">
+                    <!-- Righe generate via JavaScript -->
                 </div>
-                <!-- Campi quantità dopo selezione -->
-                <div id="qty_box_{{ ddt.id }}" style="display:none; gap:8px; align-items:center; flex-wrap:wrap;">
-                    <span id="nome_sel_{{ ddt.id }}" style="font-size:13px; font-weight:600; color:#1a1a2e;"></span>
-                    <input type="number" step="0.01" placeholder="Q.tà" id="qty_btn_{{ ddt.id }}"
-                           class="campo-inline" style="width:80px;">
-                    <span id="um_btn_{{ ddt.id }}" style="font-size:13px; color:#6b7280;"></span>
-                    <input type="number" step="0.01" placeholder="Prezzo/u." id="prezzo_btn_{{ ddt.id }}"
-                           class="campo-inline" style="width:90px;">
-                    <button type="button" onclick="submitProdottoBottone({{ ddt.id }})" class="btn btn-primary btn-sm">+ Aggiungi</button>
+                <div style="margin-top:12px; text-align:right;">
+                    <button type="button" onclick="inviaProdottiMultipli({{ ddt.id }}, {{ fattura.id }})" id="btn_invia_multiplo_{{ ddt.id }}" class="btn btn-primary btn-sm">
+                        📥 Inserisci nel DDT (<span id="carrello_conteggio_{{ ddt.id }}">0</span> prodotti)
+                    </button>
                 </div>
             </div>
-        </form>
+        </div>
     </div>
 </div>
 {% endfor %}
@@ -348,6 +350,10 @@
 </div>
 
 <script>
+// Oggetto globale per tracciare lo stato delle multi-selezioni raggruppate per ddt_id
+// Struttura: { ddt_id: { prodotto_id: { nome, prezzo, um } } }
+const carrelloDDT = {};
+
 // ========================
 // SALVA TESTATA FATTURA
 // ========================
@@ -457,7 +463,6 @@ function toggleVistaProdotti(ddt_id) {
     bottoni.style.display = mostraBottoni ? "block" : "none";
     lbl.textContent = mostraBottoni ? "Vista ricerca" : "Vista bottoni";
     document.getElementById("prod_id_" + ddt_id).value = "";
-    document.getElementById("qty_box_" + ddt_id).style.display = "none";
 }
 
 // ========================
@@ -475,31 +480,133 @@ function submitProdotto(ddt_id) {
 }
 
 // ========================
-// AGGIUNGI PRODOTTO - VISTA BOTTONI
+// MULTI-SELEZIONE BOTTONI (NUOVA LOGICA)
 // ========================
-function selezionaProdotto(ddt_id, prod_id, prezzo, um) {
-    document.getElementById("prod_id_" + ddt_id).value = prod_id;
-    document.getElementById("prezzo_btn_" + ddt_id).value = prezzo;
-    document.getElementById("um_btn_" + ddt_id).textContent = um;
-    document.getElementById("qty_btn_" + ddt_id).value = "";
-    document.getElementById("qty_box_" + ddt_id).style.display = "flex";
-    // Evidenzia bottone
-    document.querySelectorAll("[id^='btn_p_" + ddt_id + "_']").forEach(function(b) {
-        b.style.background = "white"; b.style.color = "#1a1a2e";
-    });
+function toggleSelezioneProdotto(ddt_id, prod_id, prezzo, nome, um) {
+    if (!carrelloDDT[ddt_id]) carrelloDDT[ddt_id] = {};
     const btn = document.getElementById("btn_p_" + ddt_id + "_" + prod_id);
-    if (btn) { btn.style.background = "#1a1a2e"; btn.style.color = "white"; }
+
+    if (carrelloDDT[ddt_id][prod_id]) {
+        // Rimuovi se già presente
+        delete carrelloDDT[ddt_id][prod_id];
+        if (btn) {
+            btn.style.background = "white";
+            btn.style.borderColor = "#d0d5dd";
+            btn.style.color = "initial";
+        }
+    } else {
+        // Aggiungi se assente
+        carrelloDDT[ddt_id][prod_id] = { nome: nome, prezzo: prezzo, um: um };
+        if (btn) {
+            btn.style.background = "#1a1a2e";
+            btn.style.borderColor = "#1a1a2e";
+            btn.style.color = "white";
+        }
+    }
+    renderizzaCarrello(ddt_id);
 }
 
-function submitProdottoBottone(ddt_id) {
-    const prod_id = document.getElementById("prod_id_" + ddt_id).value;
-    const qty = document.getElementById("qty_btn_" + ddt_id).value;
-    const prezzo = document.getElementById("prezzo_btn_" + ddt_id).value;
-    if (!prod_id) { alert("Seleziona un prodotto."); return; }
-    if (!qty || parseFloat(qty) <= 0) { alert("Inserisci la quantità."); return; }
-    document.getElementById("qty_hidden_" + ddt_id).value = qty;
-    document.getElementById("prezzo_hidden_" + ddt_id).value = prezzo || "";
-    document.getElementById("form_prod_" + ddt_id).submit();
+function renderizzaCarrello(ddt_id) {
+    const container = document.getElementById("carrello_container_" + ddt_id);
+    const wrapperRighe = document.getElementById("carrello_righe_" + ddt_id);
+    const conteggioSpan = document.getElementById("carrello_conteggio_" + ddt_id);
+    
+    const prodottiSelezionati = Object.keys(carrelloDDT[ddt_id] || {});
+    conteggioSpan.textContent = prodottiSelezionati.length;
+
+    if (prodottiSelezionati.length === 0) {
+        container.style.display = "none";
+        wrapperRighe.innerHTML = "";
+        return;
+    }
+
+    container.style.display = "block";
+    
+    // Rigenera la lista mantenendo i vecchi valori scritti dall'utente se presenti
+    const vecchiValori = {};
+    wrapperRighe.querySelectorAll("[data-prod-id]").forEach(el => {
+        const pId = el.getAttribute("data-prod-id");
+        const qVal = el.querySelector(".qty-carrello").value;
+        const prVal = el.querySelector(".prezzo-carrello").value;
+        vecchiValori[pId] = { qty: qVal, prezzo: prVal };
+    });
+
+    wrapperRighe.innerHTML = "";
+
+    prodottiSelezionati.forEach(pId => {
+        const p = carrelloDDT[ddt_id][pId];
+        const vQty = vecchiValori[pId] ? vecchiValori[pId].qty : "";
+        const vPrezzo = vecchiValori[pId] ? vecchiValori[pId].prezzo : p.prezzo;
+
+        const row = document.createElement("div");
+        row.setAttribute("data-prod-id", pId);
+        row.style.display = "flex";
+        row.style.alignItems = "center";
+        row.style.gap = "8px";
+        row.style.flexWrap = "wrap";
+        row.style.padding = "6px 0";
+        row.style.borderBottom = "1px dashed #e2e8f0";
+
+        row.innerHTML = `
+            <span style="flex:1; min-width:140px; font-size:13px; font-weight:500;">${p.nome}</span>
+            <input type="number" step="0.01" placeholder="Q.tà" class="campo-inline qty-carrello" style="width:75px;" value="${vQty}">
+            <span style="font-size:12px; color:#64748b; width:20px;">${p.um}</span>
+            <input type="number" step="0.01" placeholder="Prezzo" class="campo-inline prezzo-carrello" style="width:85px;" value="${vPrezzo}">
+            <button type="button" onclick="toggleSelezioneProdotto(${ddt_id}, ${pId})" style="background:none; border:none; color:#ef4444; cursor:pointer; font-size:16px; padding:0 4px;">&times;</button>
+        `;
+        wrapperRighe.appendChild(row);
+    });
+}
+
+// Invia l'intero carrello sequenzialmente in asincrono (senza cambiare rotta)
+async function inviaProdottiMultipli(ddt_id, fattura_id) {
+    const container = document.getElementById("carrello_righe_" + ddt_id);
+    const righe = container.querySelectorAll("[data-prod-id]");
+    const btnInvia = document.getElementById("btn_invia_multiplo_" + ddt_id);
+    
+    let datiPronti = [];
+    let erroreValutazione = false;
+
+    righe.forEach(r => {
+        const prod_id = r.getAttribute("data-prod-id");
+        const qty = r.querySelector(".qty-carrello").value;
+        const prezzo = r.querySelector(".prezzo-carrello").value;
+
+        if (!qty || parseFloat(qty) <= 0) {
+            erroreValutazione = true;
+            r.querySelector(".qty-carrello").style.borderColor = "#ef4444";
+        } else {
+            r.querySelector(".qty-carrello").style.borderColor = "#d0d5dd";
+            datiPronti.push({ prod_id, qty, prezzo });
+        }
+    });
+
+    if (erroreValutazione) {
+        alert("Inserisci una quantità valida per tutti i prodotti selezionati.");
+        return;
+    }
+
+    btnInvia.disabled = true;
+    btnInvia.textContent = "Inserimento in corso...";
+
+    // Esegui i salvataggi in sequenza emulando il form originario per non impattare sul backend esistente
+    for (const item of datiPronti) {
+        const formData = new FormData();
+        formData.append("fattura_id", fattura_id);
+        formData.append("ddt_id", ddt_id);
+        formData.append("prodotto_id", item.prod_id);
+        formData.append("quantita", item.qty);
+        formData.append("prezzo_override", item.prezzo);
+
+        await fetch("/add_riga_prodotto", {
+            method: "POST",
+            body: formData
+        });
+    }
+
+    // Pulisci lo stato e ricarica per mostrare le tabelle aggiornate
+    carrelloDDT[ddt_id] = {};
+    window.location.reload();
 }
 
 // ========================
@@ -512,6 +619,8 @@ function setupProdottoAutocomplete(ddt_id) {
     const hiddenPrezzo = document.getElementById("prezzo_ricerca_" + ddt_id);
     const list = document.getElementById("prod_list_" + ddt_id);
     const prodotti = JSON.parse(document.getElementById("prodotti_json").textContent);
+
+    if (!input) return;
 
     input.addEventListener("input", function() {
         const query = this.value.toLowerCase().trim();
