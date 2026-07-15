@@ -1,22 +1,23 @@
 import os
-import sqlite3
+import urllib.parse as urlparse
+import psycopg2
+import psycopg2.extras
 from flask import Flask, render_template, request, redirect, url_for, flash, g
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "chiave-segreta-temporanea")
-DATABASE = os.environ.get("DATABASE_URL", "fatture.db")
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
 # ==========================================
-# GESTIONE DATABASE (SQLite)
+# GESTIONE DATABASE (PostgreSQL)
 # ==========================================
 
 def get_db():
-    """Apre una nuova connessione al database se non esiste già per questa richiesta."""
+    """Apre una nuova connessione al database PostgreSQL se non esiste già."""
     db = getattr(g, '_database', None)
     if db is None:
-        db = g._database = sqlite3.connect(DATABASE)
-        # Consente di accedere alle colonne per nome (es. riga['cliente_nome'])
-        db.row_factory = sqlite3.Row
+        # Gestisce la connessione tramite la stringa DATABASE_URL di Render
+        db = g._database = psycopg2.connect(DATABASE_URL, sslmode='require')
     return db
 
 @app.teardown_appcontext
@@ -27,7 +28,7 @@ def close_connection(exception):
         db.close()
 
 def init_db():
-    """Inizializza il database creando le tabelle se non esistono."""
+    """Inizializza il database creando le tabelle se non esistono (Sintassi PostgreSQL)."""
     with app.app_context():
         db = get_db()
         cur = db.cursor()
@@ -35,7 +36,7 @@ def init_db():
         # Tabella Clienti
         cur.execute("""
             CREATE TABLE IF NOT EXISTS clienti (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 nome TEXT NOT NULL,
                 email TEXT,
                 telefono TEXT
@@ -45,7 +46,7 @@ def init_db():
         # Tabella Fatture
         cur.execute("""
             CREATE TABLE IF NOT EXISTS fatture (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 numero TEXT NOT NULL,
                 data TEXT,
                 data_scadenza TEXT,
@@ -63,7 +64,7 @@ def init_db():
         # Tabella Prodotti
         cur.execute("""
             CREATE TABLE IF NOT EXISTS prodotti (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 nome TEXT NOT NULL,
                 prezzo REAL DEFAULT 0.0
             )
@@ -72,7 +73,7 @@ def init_db():
         # Tabella Note
         cur.execute("""
             CREATE TABLE IF NOT EXISTS note (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 titolo TEXT NOT NULL,
                 contenuto TEXT,
                 data_creazione TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -80,16 +81,16 @@ def init_db():
         """)
         
         db.commit()
+        cur.close()
 
-# Inizializza le tabelle all'avvio dell'applicazione
-init_db()
+if DATABASE_URL:
+    init_db()
 
 
 # ==========================================
 # ROTTE DELL'APPLICAZIONE
 # ==========================================
 
-# Home / Reindirizzamento alle fatture
 @app.route("/")
 def index():
     return redirect(url_for("fatture"))
@@ -100,16 +101,17 @@ def index():
 @app.route("/fatture")
 def fatture():
     db = get_db()
-    cur = db.cursor()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     cur.execute("SELECT * FROM fatture ORDER BY data DESC, numero DESC")
     elenco_fatture = cur.fetchall()
+    cur.close()
     return render_template("fatture.html", fatture=elenco_fatture)
 
 
 @app.route("/nuova_fattura", methods=["GET", "POST"])
 def nuova_fattura():
     db = get_db()
-    cur = db.cursor()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     if request.method == "POST":
         numero = request.form.get("numero")
@@ -122,31 +124,33 @@ def nuova_fattura():
         stato_pagamento = request.form.get("stato_pagamento", "Non pagata")
         stato = request.form.get("stato", "BOZZA")
         
-        # Recuperiamo il nome del cliente per salvarlo denormalizzato nella fattura
-        cur.execute("SELECT nome FROM clienti WHERE id = ?", (cliente_id,))
+        cur.execute("SELECT nome FROM clienti WHERE id = %s", (cliente_id,))
         cliente = cur.fetchone()
         cliente_nome = cliente["nome"] if cliente else "Cliente Generico"
         
         cur.execute("""
             INSERT INTO fatture (numero, data, data_scadenza, cliente_id, cliente_nome, tipo, totale, note, stato_pagamento, stato)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (numero, data, data_scadenza, cliente_id, cliente_nome, tipo, totale, note, stato_pagamento, stato))
         
         db.commit()
+        cur.close()
         flash("Fattura creata con successo!", "success")
         return redirect(url_for("fatture"))
         
     cur.execute("SELECT id, nome FROM clienti ORDER BY nome ASC")
     clienti = cur.fetchall()
+    cur.close()
     return render_template("nuova_fattura.html", clienti=clienti)
 
 
 @app.route("/fattura/<int:fattura_id>")
 def vedi_fattura(fattura_id):
     db = get_db()
-    cur = db.cursor()
-    cur.execute("SELECT * FROM fatture WHERE id = ?", (fattura_id,))
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    cur.execute("SELECT * FROM fatture WHERE id = %s", (fattura_id,))
     f = cur.fetchone()
+    cur.close()
     if not f:
         flash("Fattura non trovata.", "danger")
         return redirect(url_for("fatture"))
@@ -157,20 +161,21 @@ def vedi_fattura(fattura_id):
 def delete_fattura(fattura_id):
     db = get_db()
     cur = db.cursor()
-    cur.execute("DELETE FROM fatture WHERE id = ?", (fattura_id,))
+    cur.execute("DELETE FROM fatture WHERE id = %s", (fattura_id,))
     db.commit()
+    cur.close()
     flash("Fattura eliminata con successo.", "success")
     return redirect(url_for("fatture"))
 
 
-# --- NUOVA SEZIONE: DASHBOARD ANALISI ---
+# --- DASHBOARD ANALISI ---
 
 @app.route("/dashboard")
 def dashboard():
     db = get_db()
-    cur = db.cursor()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
-    # 1. KPI Monetari (Totale, Incassato, In attesa, Non pagato)
+    # 1. KPI Monetari
     cur.execute("""
         SELECT 
             COALESCE(SUM(totale), 0) as totale_fatturato,
@@ -182,7 +187,7 @@ def dashboard():
     """)
     stats = cur.fetchone()
 
-    # 2. Conteggio documenti (Bozze vs Chiuse)
+    # 2. Conteggio documenti
     cur.execute("""
         SELECT 
             COUNT(*) as totale_invii,
@@ -192,21 +197,21 @@ def dashboard():
     """)
     conteggi = cur.fetchone()
 
-    # 3. Andamento mensile ultimi 6 mesi (SQLite SUBSTR)
+    # 3. Andamento mensile ultimi 6 mesi (Adattato a PostgreSQL usando SUBSTRING)
     cur.execute("""
         SELECT 
-            SUBSTR(data, 1, 7) as mese,
+            SUBSTRING(data FROM 1 FOR 7) as mese,
             COALESCE(SUM(totale), 0) as totale
         FROM fatture
         WHERE stato = 'CHIUSA' AND data IS NOT NULL AND data != ''
-        GROUP BY SUBSTR(data, 1, 7)
+        GROUP BY SUBSTRING(data FROM 1 FOR 7)
         ORDER BY mese DESC
         LIMIT 6
     """)
     trend_mensile = cur.fetchall()
-    trend_mensile = trend_mensile[::-1] # Inverte l'ordine per avere la sequenza temporale corretta
+    trend_mensile = trend_mensile[::-1]
 
-    # 4. Top 5 Clienti per volume d'affari
+    # 4. Top 5 Clienti
     cur.execute("""
         SELECT 
             cliente_nome,
@@ -218,6 +223,7 @@ def dashboard():
         LIMIT 5
     """)
     top_clienti = cur.fetchall()
+    cur.close()
 
     return render_template(
         "dashboard.html",
@@ -228,53 +234,44 @@ def dashboard():
     )
 
 
-# --- SEZIONE CLIENTI ---
+# --- SEZIONE CLIENTI, PRODOTTI, NOTE e LOGOUT ---
 
 @app.route("/clienti")
 def clienti():
     db = get_db()
-    cur = db.cursor()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     cur.execute("SELECT * FROM clienti ORDER BY nome ASC")
     elenco_clienti = cur.fetchall()
+    cur.close()
     return render_template("clienti.html", clienti=elenco_clienti)
 
-
-# --- SEZIONE PRODOTTI ---
 
 @app.route("/prodotti")
 def prodotti():
     db = get_db()
-    cur = db.cursor()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     cur.execute("SELECT * FROM prodotti ORDER BY nome ASC")
     elenco_prodotti = cur.fetchall()
+    cur.close()
     return render_template("prodotti.html", prodotti=elenco_prodotti)
 
-
-# --- SEZIONE NOTE ---
 
 @app.route("/note")
 def note():
     db = get_db()
-    cur = db.cursor()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     cur.execute("SELECT * FROM note ORDER BY data_creazione DESC")
     elenco_note = cur.fetchall()
+    cur.close()
     return render_template("note.html", note=elenco_note)
 
 
-# --- LOGOUT ---
-
 @app.route("/logout")
 def logout():
-    # Gestione fittizia o reset di eventuale sessione esistente
     flash("Disconnessione effettuata con successo.", "info")
     return redirect(url_for("fatture"))
 
 
-# ==========================================
-# AVVIO APP
-# ==========================================
-
 if __name__ == "__main__":
-    # Su Render viene utilizzata la variabile PORT definita dall'ambiente
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
