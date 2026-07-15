@@ -3,45 +3,53 @@
 <head>
 <meta charset="UTF-8">
 <style>
-    @page { margin: 1.8cm 2cm; }
+    @page { 
+        size: a4;
+        margin: 1.8cm 2cm; 
+        @bottom-right {
+            content: "Pagina " counter(page) " di " counter(pages);
+            font-family: Helvetica, Arial, sans-serif;
+            font-size: 7.5pt;
+            color: #555;
+        }
+    }
     body { font-family: Helvetica, Arial, sans-serif; font-size: 8.5pt; color: #1a1a1a; }
 
     /* TITOLO */
-    table.titolo { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
-    table.titolo td.tit { font-size: 14pt; font-weight: bold; letter-spacing: 0.5px; color: #1d4d3e; }
-    table.titolo td.num { text-align: right; font-size: 11pt; font-weight: bold; color: #1d4d3e; }
+    table.titolo { width: 100%; border-collapse: collapse; }
+    table.titolo td.tit { font-size: 14pt; font-weight: bold; letter-spacing: 0.5px; color: #1d4d3e; padding-bottom: 10px; }
+    table.titolo td.num { text-align: right; font-size: 11pt; font-weight: bold; color: #1d4d3e; padding-bottom: 10px; }
 
     /* CEDENTE / CESSIONARIO */
-    table.parti { width: 100%; border-collapse: collapse; border-top: 1px solid #000; border-bottom: 1px solid #000; margin-bottom: 12px; }
-    table.parti td { width: 50%; vertical-align: top; padding: 8px 0; }
+    table.parti { width: 100%; border-collapse: collapse; border-top: 1px solid #000; border-bottom: 1px solid #000; }
+    table.parti td { width: 50%; vertical-align: top; padding: 10px 0; }
     table.parti td.right { padding-left: 16px; }
-    .label-parte { font-size: 7.5pt; font-weight: bold; color: #1d4d3e; margin-bottom: 4px; letter-spacing: 0.3px; }
-    .info-parte { line-height: 1.5; }
+    .label-parte { font-size: 7.5pt; font-weight: bold; color: #1d4d3e; padding-bottom: 4px; letter-spacing: 0.3px; }
+    .info-parte { line-height: 1.4; }
 
-    /* DDT */
-    .ddt-bar { background: #1d4d3e; color: white; padding: 5px 10px; font-size: 8pt; font-weight: bold; letter-spacing: 0.3px; }
+    /* DDT BAR */
+    table.ddt-header { width: 100%; border-collapse: collapse; margin-top: 15px; }
+    table.ddt-header td.ddt-bar { background: #1d4d3e; color: white; padding: 5px 10px; font-size: 8pt; font-weight: bold; letter-spacing: 0.3px; }
 
     /* TABELLA RIGHE */
-    table.righe { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+    table.righe { width: 100%; border-collapse: collapse; margin-top: 2px; }
     table.righe thead tr { border-bottom: 1px solid #000; }
-    table.righe thead td { padding: 5px 8px 4px; font-size: 7.5pt; font-weight: bold; color: #1d4d3e; }
+    table.righe thead td { padding: 6px 8px 4px; font-size: 7.5pt; font-weight: bold; color: #1d4d3e; }
     table.righe thead td.right { text-align: right; }
     table.righe tbody td { padding: 5px 8px; border-bottom: 1px solid #eee; }
     table.righe tbody td.right { text-align: right; }
 
     /* TOTALI */
-    table.totali { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+    table.totali { width: 100%; border-collapse: collapse; margin-top: 15px; }
     table.totali td.spazio { width: 58%; }
     table.totali td.box { width: 42%; text-align: right; }
     .riga-totale { color: #555; padding: 2px 0; }
     .totale-finale { font-size: 12pt; font-weight: bold; color: #1d4d3e; border-top: 1px solid #000; padding-top: 5px; margin-top: 4px; }
 
-    /* PAGAMENTO */
-    .pagamento { border-top: 1px solid #000; padding-top: 10px; font-size: 8pt; color: #444; }
-    .pagamento b { color: #1d4d3e; }
-
-    /* REVERSE CHARGE */
-    .rc-box { margin-top: 10px; font-size: 8pt; color: #444; }
+    /* STRUTTURE INFERIORI A TABELLA PER PREVENIRE TRONCAMENTI DI IMPAGINAZIONE */
+    table.bottom-info { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    table.bottom-info td { vertical-align: top; font-size: 8pt; color: #444; }
+    table.bottom-info b { color: #1d4d3e; }
 </style>
 </head>
 <body>
@@ -69,7 +77,7 @@
         <td class="right">
             <div class="label-parte">CESSIONARIO / COMMITTENTE</div>
             <div class="info-parte">
-                <strong>{{ fattura.cliente_nome }}</strong><br>
+                <strong>{{ cliente.nome if cliente else (fattura.cliente_nome or 'Generico') }}</strong><br>
                 {% if cliente and cliente.indirizzo %}
                     {{ cliente.indirizzo }}<br>
                 {% endif %}
@@ -93,7 +101,11 @@
 <!-- RIGHE FORNITURA -->
 {% if fattura.tipo == "FORNITURA" %}
     {% for ddt in ddt_list %}
-    <div class="ddt-bar">DDT N. {{ ddt.numero }} DEL {{ ddt.data }}</div>
+    <table class="ddt-header">
+        <tr>
+            <td class="ddt-bar">DDT N. {{ ddt.numero }} DEL {{ ddt.data }}</td>
+        </tr>
+    </table>
     <table class="righe">
         <thead>
             <tr>
@@ -120,7 +132,7 @@
 
 <!-- RIGHE MANUALI -->
 {% else %}
-    <table class="righe">
+    <table class="righe" style="margin-top: 15px;">
         <thead>
             <tr>
                 <td style="width:48%">Descrizione</td>
@@ -158,21 +170,26 @@
     </tr>
 </table>
 
-{% if fattura.regime_iva != "22" %}
-<div class="rc-box">
-    Operazione soggetta a Reverse Charge – IVA assolta dal committente (art. 17 c. 6/A DPR 633/72)
-</div>
-{% endif %}
-
-<!-- PAGAMENTO -->
-<div class="pagamento">
-    <b>Dati di pagamento</b><br>
-    {% if banca_selezionata %}
-        {{ banca_selezionata }}
-    {% else %}
-        <em>Nessun dettaglio bancario inserito o richiesto.</em>
+<!-- INFORMAZIONI DI CHIUSURA (REVERSE CHARGE & PAGAMENTO) -->
+<table class="bottom-info">
+    {% if fattura.regime_iva != "22" %}
+    <tr>
+        <td style="padding-bottom: 10px;">
+            Operazione soggetta a Reverse Charge – IVA assolta dal committente (art. 17 c. 6/A DPR 633/72)
+        </td>
+    </tr>
     {% endif %}
-</div>
+    <tr>
+        <td>
+            <b>Dati di pagamento</b><br>
+            {% if banca_selezionata %}
+                {{ banca_selezionata }}
+            {% else %}
+                <em>Nessun dettaglio bancario inserito o richiesto.</em>
+            {% endif %}
+        </td>
+    </tr>
+</table>
 
 </body>
 </html>

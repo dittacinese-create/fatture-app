@@ -584,7 +584,6 @@ def delete_riga_fattura(riga_id, fattura_id):
     cur.close()
     return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
 
-
 # ==============================================================================
 # 5. GESTIONE DDT & RIGHE DDT (TIPO FORNITURA)
 # ==============================================================================
@@ -697,7 +696,6 @@ def delete_ddt(ddt_id, fattura_id):
         
     return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
 
-
 @app.route("/add_riga_prodotto", methods=["POST"])
 def add_riga_prodotto():
     fattura_id = request.form.get("fattura_id")
@@ -735,10 +733,28 @@ def add_riga_prodotto():
             
         descrizione = p["nome"]
         unita_misura = p["unita_misura"]
-        try:
-            prezzo = float(prezzo_override) if prezzo_override else float(p["prezzo_base"])
-        except (ValueError, TypeError):
-            prezzo = float(p["prezzo_base"])
+        
+        # Gestione Punto 3: Calcolo dinamico dell'ultimo prezzo applicato al cliente
+        if prezzo_override:
+            try:
+                prezzo = float(prezzo_override)
+            except (ValueError, TypeError):
+                prezzo = float(p["prezzo_base"])
+        else:
+            cur.execute("""
+                SELECT rd.prezzo FROM righe_ddt rd
+                JOIN ddt d ON rd.ddt_id = d.id
+                JOIN fatture f ON d.fattura_id = f.id
+                WHERE f.cliente_id = (SELECT cliente_id FROM fatture WHERE id = %s)
+                  AND rd.prodotto_id = %s
+                ORDER BY f.data DESC, d.data DESC, rd.id DESC LIMIT 1
+            """, (fattura_id, prodotto_id))
+            storico = cur.fetchone()
+            
+            if storico:
+                prezzo = float(storico["prezzo"])
+            else:
+                prezzo = float(p["prezzo_base"])
             
         cur.execute("""
             INSERT INTO righe_ddt (ddt_id, prodotto_id, descrizione, quantita, prezzo, unita_misura)
@@ -867,7 +883,6 @@ def genera_pdf(fattura_id):
     cur.execute("SELECT * FROM azienda LIMIT 1")
     azienda = cur.fetchone()
     
-    # Se la tabella azienda è vuota nel database, creiamo dati di fallback
     if not azienda:
         azienda = {
             "nome": "La Tua Ditta S.r.l.",
@@ -918,7 +933,7 @@ def genera_pdf(fattura_id):
     cur.close()
 
     # 6. Calcoli economici
-    valore_totale = f.get("totale", 0.0) or 0.0
+    valore_totale = float(f.get("totale", 0.0) or 0.0)
     try:
         aliquota = float(f["regime_iva"])
     except:
@@ -943,24 +958,17 @@ def genera_pdf(fattura_id):
         autoprint=False
     )
 
-    # 8. Genera il PDF in memoria e restituiscilo al client
+    # 8. Genera il PDF in memoria
     pdf_buffer = io.BytesIO()
     pisa_status = pisa.CreatePDF(io.BytesIO(html.encode("utf-8")), dest=pdf_buffer)
     
     if pisa_status.err:
         return "Errore durante la generazione del PDF", 500
         
-    pdf_buffer.seek(0)
-    response = make_response(pdf_buffer.read())
-    response.headers['Content-Type'] = 'application/pdf'
-    filename = f"Fattura_{f['numero']}_{f['data']}.pdf".replace(" ", "_")
-    response.headers['Content-Disposition'] = f'inline; filename={filename}'
-    return response
-    
-    # 9. Prepara la risposta con il nome file personalizzato (es: Fattura4_prova1.pdf)
-    nome_cliente_pulito = (f["cliente_nome"] or "generico").replace(" ", "").strip()
-    numero_fattura_pulito = (f["numero"] or str(fattura_id)).replace("/", "-").strip()
-    filename = f"Fattura{numero_fattura_pulito}_{nome_cliente_pulito}.pdf"
+    # 9. Prepara la risposta con il nome file personalizzato
+    nome_cliente_pulito = (cliente["nome"] if cliente else "generico").replace(" ", "").strip()
+    numero_fattura_pulito = str(f["numero"]).replace("/", "-").strip() if f["numero"] else str(fattura_id)
+    filename = f"Fattura_{numero_fattura_pulito}_{nome_cliente_pulito}.pdf"
     
     response = make_response(pdf_buffer.getvalue())
     response.headers['Content-Type'] = 'application/pdf'
@@ -1112,12 +1120,16 @@ def dashboard():
     """)
     conteggi = cur.fetchone()
     
+    # query protetta da conversioni di tipo data errate in PostgreSQL
     cur.execute("""
-        SELECT SUBSTRING(data FROM 1 FOR 7) as mese, SUM(totale) as totale 
+        SELECT 
+            TO_CHAR(data::date, 'YYYY-MM') as mese, 
+            SUM(totale) as totale 
         FROM fatture 
-        WHERE stato='CHIUSA' AND data IS NOT NULL AND data!='' 
-        GROUP BY SUBSTRING(data FROM 1 FOR 7) 
-        ORDER BY mese DESC LIMIT 6
+        WHERE stato='CHIUSA' AND data IS NOT NULL
+        GROUP BY TO_CHAR(data::date, 'YYYY-MM') 
+        ORDER BY mese DESC 
+        LIMIT 6
     """)
     trend_mensile = cur.fetchall()
     

@@ -711,6 +711,41 @@ function setupProdottoAutocomplete(ddt_id) {
         if (!input.contains(e.target) && !list.contains(e.target)) list.style.display = "none";
     });
 }
+// Funzione helper per chiedere la password se la fattura è chiusa
+function richiediPasswordSeChiusa(statoFattura) {
+    if (statoFattura === 'CHIUSA') {
+        const password = prompt("La fattura è CHIUSA. Inserisci la password di sblocco:");
+        if (!password) {
+            alert("Operazione annullata: password obbligatoria.");
+            return null;
+        }
+        return password;
+    }
+    return "";
+}
+
+// Esempio di integrazione su una chiamata AJAX (Aggiorna riga DDT / Riga manuale)
+function salvaRigaAjax(rigaId, datiModificati, statoFattura) {
+    const pwd = richiediPasswordSeChiusa(statoFattura);
+    if (statoFattura === 'CHIUSA' && pwd === null) return; // Bloccato
+
+    // Aggiunge la password al body JSON
+    datiModificati.password = pwd;
+
+    fetch(`/aggiorna_riga_ddt/${rigaId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(datiModificati)
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert("Errore: " + data.error);
+        }
+    });
+}
 
 {% if ddt_list %}
 {% for ddt in ddt_list %}
