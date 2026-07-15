@@ -41,7 +41,7 @@ def init_db():
             )
         """)
         
-        # Tabella Fatture (Estesa al massimo per coprire ogni variabile richiamata nel dettaglio)
+        # AGGIORNAMENTO SCHEMA FATTURE: se la tabella esiste già, aggiungiamo le colonne mancanti
         cur.execute("""
             CREATE TABLE IF NOT EXISTS fatture (
                 id SERIAL PRIMARY KEY,
@@ -50,18 +50,32 @@ def init_db():
                 data_scadenza TEXT,
                 cliente_id INTEGER,
                 cliente_nome TEXT,
-                tipo TEXT CHECK(tipo IN ('FORNITURA', 'MANUALE')) DEFAULT 'MANUALE',
+                tipo TEXT DEFAULT 'MANUALE',
                 regime_iva TEXT DEFAULT '22',
                 banca_id TEXT,
                 totale REAL DEFAULT 0.0,
                 note TEXT,
-                stato_pagamento TEXT CHECK(stato_pagamento IN ('Non pagata', 'In attesa', 'Pagata')) DEFAULT 'Non pagata',
-                stato TEXT CHECK(stato IN ('BOZZA', 'CHIUSA')) DEFAULT 'BOZZA',
+                stato_pagamento TEXT DEFAULT 'Non pagata',
+                stato TEXT DEFAULT 'BOZZA',
                 FOREIGN KEY (cliente_id) REFERENCES clienti(id) ON DELETE SET NULL
             )
         """)
         
-        # Tabella Righe Fattura (Elemento critico: indispensabile per non far fallire la visualizzazione)
+        # Migrazione dinamica per evitare l'errore UndefinedColumn su database vecchi
+        try:
+            cur.execute("ALTER TABLE fatture ADD COLUMN regime_iva TEXT DEFAULT '22';")
+        except psycopg2.errors.DuplicateColumn:
+            db.rollback()
+        try:
+            cur.execute("ALTER TABLE fatture ADD COLUMN tipo TEXT DEFAULT 'MANUALE';")
+        except psycopg2.errors.DuplicateColumn:
+            db.rollback()
+        try:
+            cur.execute("ALTER TABLE fatture ADD COLUMN banca_id TEXT;")
+        except psycopg2.errors.DuplicateColumn:
+            db.rollback()
+            
+        # Tabella Righe Fattura
         cur.execute("""
             CREATE TABLE IF NOT EXISTS righe_fattura (
                 id SERIAL PRIMARY KEY,
@@ -75,8 +89,7 @@ def init_db():
             )
         """)
         
-        # FORZIAMO RESET della tabella prodotti per registrare la colonna unita_misura pulita
-        cur.execute("DROP TABLE IF EXISTS prodotti CASCADE;")
+        # Tabella Prodotti
         cur.execute("""
             CREATE TABLE IF NOT EXISTS prodotti (
                 id SERIAL PRIMARY KEY,
@@ -206,23 +219,34 @@ def vedi_fattura(fattura_id):
     cur.close()
     
     fattura_dict = dict(f)
-    if "regime_iva" not in fattura_dict: fattura_dict["regime_iva"] = "22"
-    if "banca_id" not in fattura_dict: fattura_dict["banca_id"] = "BPER"
+    if "regime_iva" not in fattura_dict or not fattura_dict["regime_iva"]: 
+        fattura_dict["regime_iva"] = "22"
+    if "banca_id" not in fattura_dict: 
+        fattura_dict["banca_id"] = "BPER"
     
-    # Integrazione campi mancanti richiesti dai calcoli dell'HTML
-    if "totale_pagamento" not in fattura_dict: fattura_dict["totale_pagamento"] = 0.0
-    if "totale_pagato" not in fattura_dict:
-        fattura_dict["totale_pagato"] = fattura_dict["totale"] if fattura_dict.get("stato_pagamento") == "Pagata" else 0.0
-
-    valore_totale = fattura_dict.get("totale", 0.0)
+    # Calcolo delle variabili richieste esplicitamente dal template HTML
+    valore_totale = fattura_dict.get("totale", 0.0) or 0.0
+    
+    # Calcolo dell'imponibile partendo dal totale e scorporando l'IVA
+    try:
+        aliquota = float(fattura_dict["regime_iva"])
+    except:
+        aliquota = 22.0
         
-    # Passiamo sia 'fattura', sia la variabile isolata 'totale' richiesta a riga 110
+    valore_imponibile = valore_totale / (1 + (aliquota / 100.0))
+    valore_iva = valore_totale - valore_imponibile
+    
+    if "totale_pagato" not in fattura_dict:
+        fattura_dict["totale_pagato"] = valore_totale if fattura_dict.get("stato_pagamento") == "Pagata" else 0.0
+
     return render_template(
         "fattura_dettaglio.html", 
         fattura=fattura_dict, 
         cliente=cliente, 
         righe=righe, 
-        totale=valore_totale
+        totale=valore_totale,
+        imponibile=valore_imponibile,
+        iva=valore_iva
     )
 
 
@@ -311,7 +335,7 @@ def modifica_prodotto(prodotto_id):
         UPDATE prodotti 
         SET nome=%s, prezzo_base=%s, unita_misura=%s
         WHERE id=%s
-    """, (nome, prezzo_base, unita_misura, prodotto_id))
+    """, (nome, prezzo_base, unita_misura, producto_id))
     db.commit()
     cur.close()
     return jsonify({"success": True})
