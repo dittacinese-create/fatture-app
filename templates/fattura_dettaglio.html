@@ -1,10 +1,24 @@
 {% extends "base.html" %}
 {% block content %}
 
+<!-- BANNER DI SBLOCCO DI SICUREZZA (Mostrato solo se la fattura è CHIUSA) -->
+{% if fattura.stato == "CHIUSA" %}
+<div class="card" style="border-left: 4px solid #ef4444; background: #fef2f2; margin-bottom: 1.5rem;">
+    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+        <div>
+            <h3 style="margin: 0; font-size: 14px; color: #991b1b; font-weight: 600;">🔒 Documento Bloccato (Stato CHIUSA)</h3>
+            <p style="margin: 4px 0 0 0; font-size: 13px; color: #7f1d1d;">Le modifiche, le aggiunte e le eliminazioni sono disabilitate per preservare l'integrità del documento fiscale.</p>
+        </div>
+        <button type="button" class="btn btn-danger btn-sm" onclick="sbloccaFatturaUnificato({{ fattura.id }})" style="background: #dc2626;">
+            🔓 Inserisci Password e Riapri
+        </button>
+    </div>
+</div>
+{% endif %}
+
 <div class="topbar">
     <h1>Fattura {{ fattura.numero }}</h1>
     <div class="flex gap-1">
-        <!-- Rimosso il controllo sullo stato CHIUSA per permettere sempre il download -->
         <a href="/pdf/{{ fattura.id }}" class="btn btn-primary">⬇ Scarica PDF</a>
         <a href="/fatture" class="btn">← Indietro</a>
     </div>
@@ -44,11 +58,11 @@
         </div>
         <div class="form-group" style="margin-bottom:0; min-width:120px;">
             <label style="font-size:12px; color:#6b7280;">Numero fattura</label>
-            <input type="text" id="edit_numero" value="{{ fattura.numero }}" class="campo-inline" style="width:100%; font-weight:600;">
+            <input type="text" id="edit_numero" value="{{ fattura.numero }}" class="campo-inline" style="width:100%; font-weight:600;" {% if fattura.stato == "CHIUSA" %}disabled{% endif %}>
         </div>
         <div class="form-group" style="margin-bottom:0; min-width:140px;">
             <label style="font-size:12px; color:#6b7280;">Data fattura</label>
-            <input type="date" id="edit_data" value="{{ fattura.data }}" class="campo-inline" style="width:100%;">
+            <input type="date" id="edit_data" value="{{ fattura.data }}" class="campo-inline" style="width:100%;" {% if fattura.stato == "CHIUSA" %}disabled{% endif %}>
         </div>
         <div>
             <div style="font-size:12px; color:#6b7280; margin-bottom:3px;">Tipo</div>
@@ -77,7 +91,7 @@
         <div class="form-row" style="flex-wrap:wrap; align-items:flex-end;">
             <div class="form-group" style="min-width:140px;">
                 <label>Stato pagamento</label>
-                <select id="stato_pagamento">
+                <select id="stato_pagamento" {% if fattura.stato == "CHIUSA" %}disabled{% endif %}>
                     <option value="Non pagata" {% if fattura.stato_pagamento == "Non pagata" or not fattura.stato_pagamento %}selected{% endif %}>Non pagata</option>
                     <option value="Parziale" {% if fattura.stato_pagamento == "Parziale" %}selected{% endif %}>Parziale</option>
                     <option value="In attesa" {% if fattura.stato_pagamento == "In attesa" %}selected{% endif %}>In attesa</option>
@@ -86,24 +100,27 @@
             </div>
             <div class="form-group" style="min-width:130px;">
                 <label>Totale Pagato (€)</label>
-                <input type="number" step="0.01" id="totale_pagato" value="{{ fattura.totale_pagato or 0.0 }}" class="campo-inline" style="width:100%;">
+                <input type="number" step="0.01" id="totale_pagato" value="{{ fattura.totale_pagato or 0.0 }}" class="campo-inline" style="width:100%;" {% if fattura.stato == "CHIUSA" %}disabled{% endif %}>
             </div>
             <div class="form-group" style="min-width:140px;">
                 <label>Scadenza pagamento</label>
-                <input type="date" id="data_scadenza" value="{{ fattura.data_scadenza or '' }}">
+                <input type="date" id="data_scadenza" value="{{ fattura.data_scadenza or '' }}" {% if fattura.stato == "CHIUSA" %}disabled{% endif %}>
             </div>
             <div class="form-group" style="min-width:140px;">
                 <label>Data pagamento</label>
-                <input type="date" id="data_pagamento" value="{{ fattura.data_pagamento or '' }}">
+                <input type="date" id="data_pagamento" value="{{ fattura.data_pagamento or '' }}" {% if fattura.stato == "CHIUSA" %}disabled{% endif %}>
             </div>
             <div class="form-group" style="flex:2; min-width:200px;">
                 <label>Note / Cantiere</label>
-                <input type="text" id="note" value="{{ fattura.note or '' }}" placeholder="es. Cantiere di Torino">
+                <input type="text" id="note" value="{{ fattura.note or '' }}" placeholder="es. Cantiere di Torino" {% if fattura.stato == "CHIUSA" %}disabled{% endif %}>
             </div>
+            
+            {% if fattura.stato != "CHIUSA" %}
             <div style="padding-bottom:1rem; display:flex; align-items:center; gap:0.75rem;">
                 <button onclick="salvaFatturaUnificato()" class="btn btn-primary btn-sm" type="button" id="btn_salva_unificato">Salva</button>
                 <span id="salva_status" style="font-size:13px; color:#059669; font-weight:600; display:none;">✓ Salvato</span>
             </div>
+            {% endif %}
         </div>
         <div style="font-size: 13px; color: #4b5563; margin-top: 8px; font-weight: 500;">
             Residuo da riscuotere: <span style="color: #b91c1c; font-weight: 600;">€ {{ "%.2f"|format(totale - (fattura.totale_pagato or 0.0)) }}</span>
@@ -114,204 +131,206 @@
 <!-- DDT (FORNITURA) -->
 {% if fattura.tipo == "FORNITURA" %}
 
-{% if fattura.stato == "BOZZA" %}
-<div class="card">
-    <h2 style="font-size:14px; font-weight:600; margin-bottom:0.75rem;">Aggiungi DDT</h2>
-    <form method="POST" action="/add_ddt">
-        <input type="hidden" name="fattura_id" value="{{ fattura.id }}">
-        <div class="form-row" style="align-items:flex-end;">
-            <div class="form-group">
-                <label>Numero DDT</label>
-                <input name="numero" placeholder="es. 15" required>
+    {% if fattura.stato != "CHIUSA" %}
+    <div class="card">
+        <h2 style="font-size:14px; font-weight:600; margin-bottom:0.75rem;">Aggiungi DDT</h2>
+        <form method="POST" action="/add_ddt">
+            <input type="hidden" name="fattura_id" value="{{ fattura.id }}">
+            <div class="form-row" style="align-items:flex-end;">
+                <div class="form-group">
+                    <label>Numero DDT</label>
+                    <input name="numero" placeholder="es. 15" required>
+                </div>
+                <div class="form-group">
+                    <label>Data DDT</label>
+                    <input type="date" name="data" required>
+                </div>
+                <div style="padding-bottom:1rem;">
+                    <button type="submit" class="btn btn-primary">+ Aggiungi DDT</button>
+                </div>
             </div>
-            <div class="form-group">
-                <label>Data DDT</label>
-                <input type="date" name="data" required>
-            </div>
-            <div style="padding-bottom:1rem;">
-                <button type="submit" class="btn btn-primary">+ Aggiungi DDT</button>
-            </div>
-        </div>
-    </form>
-</div>
-{% endif %}
-
-{% for ddt in ddt_list %}
-<div class="ddt-block">
-    <h3>
-        <span style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-            DDT n.
-            <input type="text" id="ddt_numero_{{ ddt.id }}" value="{{ ddt.numero }}"
-                   class="campo-inline" style="width:60px;">
-            del
-            <input type="date" id="ddt_data_{{ ddt.id }}" value="{{ ddt.data }}"
-                   class="campo-inline">
-            <button onclick="salvaDDT({{ ddt.id }})" class="btn btn-primary btn-sm" type="button">Salva</button>
-            <span id="msg_ddt_{{ ddt.id }}" style="display:none; color:#059669; font-size:12px; font-weight:600;">✓</span>
-        </span>
-        <a href="/delete_ddt/{{ ddt.id }}/{{ fattura.id }}"
-           onclick="return confirm('Eliminare DDT {{ ddt.numero }}?')"
-           class="action-link danger btn-sm">Elimina DDT</a>
-    </h3>
-
-    <table style="margin-bottom:0.75rem;">
-        <thead>
-            <tr>
-                <th>Prodotto</th>
-                <th>Q.tà</th>
-                <th>U.M.</th>
-                <th>Prezzo/u.</th>
-                <th>Totale</th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for r in righe_ddt %}
-            {% if r.ddt_id == ddt.id %}
-            <tr id="riga_ddt_{{ r.id }}">
-                <td>{{ r.descrizione }}</td>
-                <td>
-                    <span id="span_qty_{{ r.id }}">{{ r.quantita }}</span>
-                    <input id="inp_qty_{{ r.id }}" type="number" step="0.01" value="{{ r.quantita }}"
-                           class="campo-inline" style="width:70px; display:none;">
-                </td>
-                <td>{{ r.unita_misura }}</td>
-                <td>
-                    <span id="span_prezzo_{{ r.id }}">€ {{ "%.2f"|format(r.prezzo) }}</span>
-                    <input id="inp_prezzo_{{ r.id }}" type="number" step="0.01" value="{{ r.prezzo }}"
-                           class="campo-inline" style="width:80px; display:none;">
-                </td>
-                <td id="span_totale_{{ r.id }}">€ {{ "%.2f"|format(r.totale) }}</td>
-                <td style="white-space:nowrap;">
-                    <a onclick="modificaRigaDDT({{ r.id }})" id="btn_mod_{{ r.id }}" class="action-link" style="cursor:pointer;">Modifica</a>
-                    <a onclick="salvaRigaDDT({{ r.id }}, {{ fattura.id }})" id="btn_salva_{{ r.id }}" class="action-link" style="cursor:pointer; display:none; color:#059669;">Salva</a>
-                    &nbsp;·&nbsp;
-                    <a href="/delete_riga_ddt/{{ r.id }}/{{ fattura.id }}"
-                       onclick="return confirm('Eliminare riga?')"
-                       class="action-link danger">Elimina</a>
-                </td>
-            </tr>
-            {% endif %}
-            {% endfor %}
-        </tbody>
-    </table>
-
-    <div style="margin-top:8px;">
-        <button type="button" onclick="toggleVistaProdotti({{ ddt.id }})"
-                style="font-size:11px; padding:2px 10px; border:1px solid #d0d5dd; border-radius:20px; background:white; cursor:pointer; color:#6b7280; margin-bottom:8px;">
-            🔀 <span id="lbl_toggle_{{ ddt.id }}">Vista bottoni</span>
-        </button>
-
-        <div id="carrello_container_{{ ddt.id }}" style="display:none; background:#f8fafc; border:1px solid #e2e8f0; padding:12px; border-radius:8px; margin-bottom:12px;">
-            <h4 style="font-size:12px; text-transform:uppercase; color:#64748b; margin-top:0; margin-bottom:8px; font-weight:700;">Prodotti pronti da inserire:</h4>
-            <div id="carrello_righe_{{ ddt.id }}" style="display:flex; flex-direction:column; gap:8px;"></div>
-            <div style="margin-top:12px; text-align:right;">
-                <button type="button" onclick="inviaProdottiMultipli({{ ddt.id }}, {{ fattura.id }})" id="btn_invia_multiplo_{{ ddt.id }}" class="btn btn-primary btn-sm">
-                    📥 Inserisci nel DDT (<span id="carrello_conteggio_{{ ddt.id }}">0</span> prodotti)
-                </button>
-            </div>
-        </div>
-
-        <div id="vista_ricerca_{{ ddt.id }}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-            <div class="autocomplete-wrapper">
-                <input type="text" id="prod_search_{{ ddt.id }}" placeholder="Cerca prodotto..." autocomplete="off">
-                <div class="autocomplete-list" id="prod_list_{{ ddt.id }}"></div>
-            </div>
-            <input type="number" step="0.01" placeholder="Q.tà" id="qty_ricerca_{{ ddt.id }}" class="campo-inline" style="width:80px;">
-            <span id="um_ricerca_{{ ddt.id }}" style="font-size:13px; color:#6b7280;"></span>
-            <input type="number" step="0.01" placeholder="Prezzo/u." id="prezzo_ricerca_{{ ddt.id }}" class="campo-inline" style="width:90px;">
-            <input type="hidden" id="prod_id_{{ ddt.id }}">
-            <button type="button" onclick="aggiungiAzioneRicercaAlCarrello({{ ddt.id }})" class="btn btn-primary btn-sm">+ Seleziona</button>
-        </div>
-
-        <div id="vista_bottoni_{{ ddt.id }}" style="display:none;">
-            <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
-                {% for p in prodotti %}
-                <button type="button" onclick="toggleSelezioneProdotto({{ ddt.id }}, {{ p.id }})" id="btn_p_{{ ddt.id }}_{{ p.id }}" class="campo-inline" style="cursor:pointer; background:white; padding:8px 12px; border-radius:8px; font-size:12px; text-align:left; border:1px solid #d0d5dd; transition: all 0.2s;">
-                    <strong>{{ p.nome }}</strong><br>
-                    <span style="color:#6b7280; font-size:11px;">€{{ "%.2f"|format(p.prezzo_base) }} / {{ p.unita_misura }}</span>
-                </button>
-                {% endfor %}
-            </div>
-        </div>
+        </form>
     </div>
-</div>
-{% endfor %}
+    {% endif %}
+
+    {% for ddt in ddt_list %}
+    <div class="ddt-block">
+        <h3>
+            <span style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                DDT n.
+                <input type="text" id="ddt_numero_{{ ddt.id }}" value="{{ ddt.numero }}" class="campo-inline" style="width:60px;" {% if fattura.stato == "CHIUSA" %}disabled{% endif %}>
+                del
+                <input type="date" id="ddt_data_{{ ddt.id }}" value="{{ ddt.data }}" class="campo-inline" {% if fattura.stato == "CHIUSA" %}disabled{% endif %}>
+                
+                {% if fattura.stato != "CHIUSA" %}
+                <button onclick="salvaDDT({{ ddt.id }})" class="btn btn-primary btn-sm" type="button">Salva</button>
+                <span id="msg_ddt_{{ ddt.id }}" style="display:none; color:#059669; font-size:12px; font-weight:600;">✓</span>
+                {% endif %}
+            </span>
+            
+            {% if fattura.stato != "CHIUSA" %}
+            <a href="/delete_ddt/{{ ddt.id }}/{{ fattura.id }}" onclick="return confirm('Eliminare DDT {{ ddt.numero }}?')" class="action-link danger btn-sm">Elimina DDT</a>
+            {% endif %}
+        </h3>
+
+        <table style="margin-bottom:0.75rem;">
+            <thead>
+                <tr>
+                    <th>Prodotto</th>
+                    <th>Q.tà</th>
+                    <th>U.M.</th>
+                    <th>Prezzo/u.</th>
+                    <th>Totale</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in righe_ddt %}
+                {% if r.ddt_id == ddt.id %}
+                <tr id="riga_ddt_{{ r.id }}">
+                    <td>{{ r.descrizione }}</td>
+                    <td>
+                        <span id="span_qty_{{ r.id }}">{{ r.quantita }}</span>
+                        <input id="inp_qty_{{ r.id }}" type="number" step="0.01" value="{{ r.quantita }}" class="campo-inline" style="width:70px; display:none;">
+                    </td>
+                    <td>{{ r.unita_misura }}</td>
+                    <td>
+                        <span id="span_prezzo_{{ r.id }}">€ {{ "%.2f"|format(r.prezzo) }}</span>
+                        <input id="inp_prezzo_{{ r.id }}" type="number" step="0.01" value="{{ r.prezzo }}" class="campo-inline" style="width:80px; display:none;">
+                    </td>
+                    <td id="span_totale_{{ r.id }}">€ {{ "%.2f"|format(r.totale) }}</td>
+                    <td style="white-space:nowrap;">
+                        {% if fattura.stato != "CHIUSA" %}
+                            <a onclick="modificaRigaDDT({{ r.id }})" id="btn_mod_{{ r.id }}" class="action-link" style="cursor:pointer;">Modifica</a>
+                            <a onclick="salvaRigaDDT_Intermedio({{ r.id }}, '{{ fattura.stato }}')" id="btn_salva_{{ r.id }}" class="action-link" style="cursor:pointer; display:none; color:#059669;">Salva</a>
+                            &nbsp;·&nbsp;
+                            <a href="/delete_riga_ddt/{{ r.id }}/{{ fattura.id }}" onclick="return confirm('Eliminare riga?')" class="action-link danger">Elimina</a>
+                        {% else %}
+                            <span class="text-muted" style="font-size: 11px;">Nessuna azione</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+            </tbody>
+        </table>
+
+        {% if fattura.stato != "CHIUSA" %}
+        <div style="margin-top:8px;">
+            <button type="button" onclick="toggleVistaProdotti({{ ddt.id }})" style="font-size:11px; padding:2px 10px; border:1px solid #d0d5dd; border-radius:20px; background:white; cursor:pointer; color:#6b7280; margin-bottom:8px;">
+                🔀 <span id="lbl_toggle_{{ ddt.id }}">Vista bottoni</span>
+            </button>
+
+            <div id="carrello_container_{{ ddt.id }}" style="display:none; background:#f8fafc; border:1px solid #e2e8f0; padding:12px; border-radius:8px; margin-bottom:12px;">
+                <h4 style="font-size:12px; text-transform:uppercase; color:#64748b; margin-top:0; margin-bottom:8px; font-weight:700;">Prodotti pronti da inserire:</h4>
+                <div id="carrello_righe_{{ ddt.id }}" style="display:flex; flex-direction:column; gap:8px;"></div>
+                <div style="margin-top:12px; text-align:right;">
+                    <button type="button" onclick="inviaProdottiMultipli({{ ddt.id }}, {{ fattura.id }})" id="btn_invia_multiplo_{{ ddt.id }}" class="btn btn-primary btn-sm">
+                        📥 Inserisci nel DDT (<span id="carrello_conteggio_{{ ddt.id }}">0</span> prodotti)
+                    </button>
+                </div>
+            </div>
+
+            <div id="vista_ricerca_{{ ddt.id }}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <div class="autocomplete-wrapper">
+                    <input type="text" id="prod_search_{{ ddt.id }}" placeholder="Cerca prodotto..." autocomplete="off">
+                    <div class="autocomplete-list" id="prod_list_{{ ddt.id }}"></div>
+                </div>
+                <input type="number" step="0.01" placeholder="Q.tà" id="qty_ricerca_{{ ddt.id }}" class="campo-inline" style="width:80px;">
+                <span id="um_ricerca_{{ ddt.id }}" style="font-size:13px; color:#6b7280;"></span>
+                <input type="number" step="0.01" placeholder="Prezzo/u." id="prezzo_ricerca_{{ ddt.id }}" class="campo-inline" style="width:90px;">
+                <input type="hidden" id="prod_id_{{ ddt.id }}">
+                <button type="button" onclick="aggiungiAzioneRicercaAlCarrello({{ ddt.id }})" class="btn btn-primary btn-sm">+ Seleziona</button>
+            </div>
+
+            <div id="vista_bottoni_{{ ddt.id }}" style="display:none;">
+                <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
+                    {% for p in prodotti %}
+                    <button type="button" onclick="toggleSelezioneProdotto({{ ddt.id }}, {{ p.id }})" id="btn_p_{{ ddt.id }}_{{ p.id }}" class="campo-inline" style="cursor:pointer; background:white; padding:8px 12px; border-radius:8px; font-size:12px; text-align:left; border:1px solid #d0d5dd; transition: all 0.2s;">
+                        <strong>{{ p.nome }}</strong><br>
+                        <span style="color:#6b7280; font-size:11px;">€{{ "%.2f"|format(p.prezzo_base) }} / {{ p.unita_misura }}</span>
+                    </button>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
 
 {% endif %}
 
 <!-- RIGHE MANUALI (OTTIMIZZATE CON AJAX VELOCE) -->
 {% if fattura.tipo != "FORNITURA" %}
 
-{% if fattura.stato == "BOZZA" %}
-<div class="card">
-    <h2 style="font-size:14px; font-weight:600; margin-bottom:0.75rem;">Aggiungi riga</h2>
-    <div style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
-        <div class="form-group" style="flex:2; min-width:180px; margin-bottom:0;">
-            <label>Descrizione</label>
-            <input id="manuale_descrizione" placeholder="es. Posa cubetti 6x8" class="campo-inline" style="width:100%; height:34px;">
-        </div>
-        <div class="form-group" style="width:80px; margin-bottom:0;">
-            <label>Q.tà</label>
-            <input type="number" step="0.01" id="manuale_quantita" placeholder="0" class="campo-inline" style="width:100%; height:34px;">
-        </div>
-        <div class="form-group" style="width:80px; margin-bottom:0;">
-            <label>U.M.</label>
-            <select id="manuale_unita_misura" class="campo-inline" style="width:100%; height:34px; padding:4px;">
-                <option value="mq">mq</option>
-                <option value="pz">pz</option>
-                <option value="gg">gg</option>
-                <option value="ml">ml</option>
-                <option value="qli">qli</option>
-            </select>
-        </div>
-        <div class="form-group" style="width:100px; margin-bottom:0;">
-            <label>Prezzo/u.</label>
-            <input type="number" step="0.01" id="manuale_prezzo" placeholder="0.00" class="campo-inline" style="width:100%; height:34px;">
-        </div>
-        <div>
-            <button type="button" id="btn_aggiungi_manuale" onclick="inviaRigaManualeAsincrona({{ fattura.id }})" class="btn btn-primary" style="height:34px;">+ Aggiungi</button>
+    {% if fattura.stato != "CHIUSA" %}
+    <div class="card">
+        <h2 style="font-size:14px; font-weight:600; margin-bottom:0.75rem;">Aggiungi riga</h2>
+        <div style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
+            <div class="form-group" style="flex:2; min-width:180px; margin-bottom:0;">
+                <label>Descrizione</label>
+                <input id="manuale_descrizione" placeholder="es. Posa cubetti 6x8" class="campo-inline" style="width:100%; height:34px;">
+            </div>
+            <div class="form-group" style="width:80px; margin-bottom:0;">
+                <label>Q.tà</label>
+                <input type="number" step="0.01" id="manuale_quantita" placeholder="0" class="campo-inline" style="width:100%; height:34px;">
+            </div>
+            <div class="form-group" style="width:80px; margin-bottom:0;">
+                <label>U.M.</label>
+                <select id="manuale_unita_misura" class="campo-inline" style="width:100%; height:34px; padding:4px;">
+                    <option value="mq">mq</option>
+                    <option value="pz">pz</option>
+                    <option value="gg">gg</option>
+                    <option value="ml">ml</option>
+                    <option value="qli">qli</option>
+                </select>
+            </div>
+            <div class="form-group" style="width:100px; margin-bottom:0;">
+                <label>Prezzo/u.</label>
+                <input type="number" step="0.01" id="manuale_prezzo" placeholder="0.00" class="campo-inline" style="width:100%; height:34px;">
+            </div>
+            <div>
+                <button type="button" id="btn_aggiungi_manuale" onclick="inviaRigaManualeAsincrona({{ fattura.id }})" class="btn btn-primary" style="height:34px;">+ Aggiungi</button>
+            </div>
         </div>
     </div>
-</div>
-{% endif %}
+    {% endif %}
 
-<div class="table-wrap">
-    <table>
-        <thead>
-            <tr>
-                <th>Descrizione</th>
-                <th>Q.tà</th>
-                <th>U.M.</th>
-                <th>Prezzo/u.</th>
-                <th>Totale riga</th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for r in righe %}
-            <tr>
-                <td>{{ r.descrizione }}</td>
-                <td>{{ r.quantita }}</td>
-                <td>{{ r.unita_misura }}</td>
-                <td>€ {{ "%.2f"|format(r.prezzo) }}</td>
-                <td>€ {{ "%.2f"|format(r.totale) }}</td>
-                <td>
-                    {% if fattura.stato == "BOZZA" %}
-                    <a href="/delete_riga_fattura/{{ r.id }}/{{ fattura.id }}"
-                       onclick="return confirm('Eliminare riga?')"
-                       class="action-link danger">Elimina</a>
-                    {% endif %}
-                </td>
-            </tr>
-            {% else %}
-            <tr>
-                <td colspan="6" style="text-align:center; color:#9ca3af; padding:1.5rem;">Nessuna riga.</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Descrizione</th>
+                    <th>Q.tà</th>
+                    <th>U.M.</th>
+                    <th>Prezzo/u.</th>
+                    <th>Totale riga</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in righe %}
+                <tr>
+                    <!-- [SEZIONE MODIFICHE FUTURE: Predisposizione per l'In-place editing delle righe manuali qui] -->
+                    <td>{{ r.descrizione }}</td>
+                    <td>{{ r.quantita }}</td>
+                    <td>{{ r.unita_misura }}</td>
+                    <td>€ {{ "%.2f"|format(r.prezzo) }}</td>
+                    <td>€ {{ "%.2f"|format(r.totale) }}</td>
+                    <td>
+                        {% if fattura.stato != "CHIUSA" %}
+                        <a href="/delete_riga_fattura/{{ r.id }}/{{ fattura.id }}" onclick="return confirm('Eliminare riga?')" class="action-link danger">Elimina</a>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" style="text-align:center; color:#9ca3af; padding:1.5rem;">Nessuna riga.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 {% endif %}
 
 <!-- RIEPILOGO -->
@@ -330,16 +349,45 @@
 
 <!-- AZIONI -->
 <div class="flex gap-1 mt-2">
-    {% if fattura.stato == "BOZZA" %}
-    <a href="/chiudi_fattura/{{ fattura.id }}" class="btn btn-primary">✅ Chiudi fattura</a>
+    {% if fattura.stato != "CHIUSA" %}
+        <a href="/chiudi_fattura/{{ fattura.id }}" class="btn btn-primary">✅ Chiudi fattura</a>
+        <a href="/delete_fattura/{{ fattura.id }}" onclick="return confirm('Eliminare fattura {{ fattura.numero }}?')" class="btn btn-danger">🗑 Elimina fattura</a>
     {% endif %}
-    <a href="/delete_fattura/{{ fattura.id }}"
-       onclick="return confirm('Eliminare fattura {{ fattura.numero }}?')"
-       class="btn btn-danger">🗑 Elimina fattura</a>
 </div>
 
 <script>
 const carrelloDDT = {};
+
+// ===============================================
+// FUNZIONE FUNZIONALE: SBLOCCO UNIFICATO CON PASSWORD
+// ===============================================
+function sbloccaFatturaUnificato(fatturaId) {
+    const pwd = prompt("Inserisci la password di sicurezza per riaprire e sbloccare questa fattura:");
+    if (pwd === null) return;
+    if (pwd.trim() === "") {
+        alert("La password non può essere vuota.");
+        return;
+    }
+
+    fetch(`/riapri_fattura/${fatturaId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pwd })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.message || "Fattura sbloccata con successo!");
+            window.location.reload();
+        } else {
+            alert("Errore: " + data.error);
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        alert("Errore durante la comunicazione di rete.");
+    });
+}
 
 // ===============================================
 // INSERIMENTO ASINCRONO RIGA MANUALE (VELOCE)
@@ -385,6 +433,8 @@ async function inviaRigaManualeAsincrona(fattura_id) {
 async function salvaFatturaUnificato() {
     const btn = document.getElementById("btn_salva_unificato");
     const s = document.getElementById("salva_status");
+    if(!btn) return;
+    
     btn.disabled = true;
     btn.textContent = "Salvataggio...";
 
@@ -397,7 +447,7 @@ async function salvaFatturaUnificato() {
             body: JSON.stringify({
                 numero: document.getElementById("edit_numero").value,
                 data: document.getElementById("edit_data").value,
-                note: noteVal // Inviamo le note anche qui per sicurezza
+                note: noteVal
             })
         });
 
@@ -455,25 +505,46 @@ function modificaRigaDDT(id) {
     document.getElementById("btn_salva_" + id).style.display = "inline";
 }
 
-function salvaRigaDDT(id, fattura_id) {
+// Funzione ponte per raccogliere i dati della riga e inviarli tramite la nuova logica AJAX
+function salvaRigaDDT_Intermedio(id, statoFattura) {
     const qty = parseFloat(document.getElementById("inp_qty_" + id).value);
     const prezzo = parseFloat(document.getElementById("inp_prezzo_" + id).value);
-    fetch("/aggiorna_riga_ddt/" + id, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ quantita: qty, prezzo: prezzo })
-    }).then(r => r.json()).then(function(d) {
-        if (d.success) {
-            const totale = (qty * prezzo).toFixed(2);
-            document.getElementById("span_qty_" + id).textContent = qty;
-            document.getElementById("span_prezzo_" + id).textContent = "€ " + parseFloat(prezzo).toFixed(2);
-            document.getElementById("span_totale_" + id).textContent = "€ " + totale;
-            document.getElementById("span_qty_" + id).style.display = "inline";
-            document.getElementById("span_prezzo_" + id).style.display = "inline";
-            document.getElementById("inp_qty_" + id).style.display = "none";
-            document.getElementById("inp_prezzo_" + id).style.display = "none";
-            document.getElementById("btn_mod_" + id).style.display = "inline";
-            document.getElementById("btn_salva_" + id).style.display = "none";
+    
+    const datiModificati = {
+        quantita: qty,
+        prezzo: prezzo
+    };
+
+    salvaRigaAjax(id, datiModificati, statoFattura);
+}
+
+// Richiede la password se lo stato è CHIUSA
+function richiediPasswordSeChiusa(statoFattura) {
+    if (statoFattura === 'CHIUSA') {
+        return prompt("Il documento è chiuso. Inserisci la password per autorizzare questa specifica modifica:");
+    }
+    return "";
+}
+
+// Esempio di integrazione su chiamata AJAX (Aggiorna riga DDT / Riga manuale)
+function salvaRigaAjax(rigaId, datiModificati, statoFattura) {
+    const pwd = richiediPasswordSeChiusa(statoFattura);
+    if (statoFattura === 'CHIUSA' && pwd === null) return; // Bloccato
+
+    // Aggiunge la password al body JSON
+    datiModificati.password = pwd;
+
+    fetch(`/aggiorna_riga_ddt/${rigaId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(datiModificati)
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert("Errore: " + data.error);
         }
     });
 }
@@ -482,6 +553,7 @@ function toggleVistaProdotti(ddt_id) {
     const ricerca = document.getElementById("vista_ricerca_" + ddt_id);
     const bottoni = document.getElementById("vista_bottoni_" + ddt_id);
     const lbl = document.getElementById("lbl_toggle_" + ddt_id);
+    if(!ricerca || !bottoni) return;
     const mostraBottoni = ricerca.style.display !== "none";
     ricerca.style.display = mostraBottoni ? "none" : "flex";
     bottoni.style.display = mostraBottoni ? "block" : "none";
@@ -570,6 +642,7 @@ function renderizzaCarrello(ddt_id) {
     const container = document.getElementById("carrello_container_" + ddt_id);
     const wrapperRighe = document.getElementById("carrello_righe_" + ddt_id);
     const conteggioSpan = document.getElementById("carrello_conteggio_" + ddt_id);
+    if(!container || !wrapperRighe) return;
     
     const prodottiSelezionati = Object.keys(carrelloDDT[ddt_id] || {});
     conteggioSpan.textContent = prodottiSelezionati.length;
@@ -631,6 +704,7 @@ function rimuoviDalCarrelloSpecifico(ddt_id, prod_id) {
 
 async function inviaProdottiMultipli(ddt_id, fattura_id) {
     const container = document.getElementById("carrello_righe_" + ddt_id);
+    if(!container) return;
     const righe = container.querySelectorAll("[data-prod-id]");
     const btnInvia = document.getElementById("btn_invia_multiplo_" + ddt_id);
     
@@ -711,47 +785,14 @@ function setupProdottoAutocomplete(ddt_id) {
         if (!input.contains(e.target) && !list.contains(e.target)) list.style.display = "none";
     });
 }
-// Funzione helper per chiedere la password se la fattura è chiusa
-function richiediPasswordSeChiusa(statoFattura) {
-    if (statoFattura === 'CHIUSA') {
-        const password = prompt("La fattura è CHIUSA. Inserisci la password di sblocco:");
-        if (!password) {
-            alert("Operazione annullata: password obbligatoria.");
-            return null;
-        }
-        return password;
-    }
-    return "";
-}
 
-// Esempio di integrazione su una chiamata AJAX (Aggiorna riga DDT / Riga manuale)
-function salvaRigaAjax(rigaId, datiModificati, statoFattura) {
-    const pwd = richiediPasswordSeChiusa(statoFattura);
-    if (statoFattura === 'CHIUSA' && pwd === null) return; // Bloccato
-
-    // Aggiunge la password al body JSON
-    datiModificati.password = pwd;
-
-    fetch(`/aggiorna_riga_ddt/${rigaId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(datiModificati)
-    })
-    .then(res => res.json())
-    .then(data => {
-        if (data.success) {
-            location.reload();
-        } else {
-            alert("Errore: " + data.error);
-        }
-    });
-}
-
-{% if ddt_list %}
-{% for ddt in ddt_list %}
-setupProdottoAutocomplete({{ ddt.id }});
-{% endfor %}
-{% endif %}
+// Inizializzazione automatica dei ddt esistenti al caricamento
+document.addEventListener("DOMContentLoaded", function() {
+    {% if ddt_list %}
+        {% for ddt in ddt_list %}
+            setupProdottoAutocomplete({{ ddt.id }});
+        {% endfor %}
+    {% endif %}
+});
 </script>
-
 {% endblock %}

@@ -584,6 +584,38 @@ def delete_riga_fattura(riga_id, fattura_id):
     cur.close()
     return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
 
+@app.route("/riapri_fattura/<int:fattura_id>", methods=["POST"])
+def riapri_fattura(fattura_id):
+    data = request.get_json() or {}
+    password = data.get("password")
+
+    # Verifica di sicurezza sulla password globale
+    if not password or password != PASSWORD_ACCESSO:
+        return jsonify({"success": False, "error": "Password di sblocco errata o mancante."}), 403
+
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    try:
+        # Controlla se la fattura esiste
+        cur.execute("SELECT stato FROM fatture WHERE id = %s", (fattura_id,))
+        f = cur.fetchone()
+        if not f:
+            return jsonify({"success": False, "error": "Fattura non trovata"}), 404
+
+        if f["stato"] != "CHIUSA":
+            return jsonify({"success": False, "error": "La fattura è già in uno stato modificabile."})
+
+        # Riporta lo stato ad aperto (es. "APERTA" o "BOZZA", usa lo stato che usi di solito)
+        cur.execute("UPDATE fatture SET stato = 'APERTA' WHERE id = %s", (fattura_id,))
+        db.commit()
+        
+        return jsonify({"success": True, "message": "Fattura riaperta con successo. Ora puoi modificarla."})
+    except Exception as e:
+        db.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        cur.close()
+
 # ==============================================================================
 # 5. GESTIONE DDT & RIGHE DDT (TIPO FORNITURA)
 # ==============================================================================
