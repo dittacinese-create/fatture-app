@@ -1,8 +1,7 @@
 import os
-import urllib.parse as urlparse
 import psycopg2
 import psycopg2.extras
-from flask import Flask, render_template, request, redirect, url_for, flash, g
+from flask import Flask, render_template, request, redirect, url_for, flash, g, jsonify
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "chiave-segreta-temporanea")
@@ -13,33 +12,32 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 # ==========================================
 
 def get_db():
-    """Apre una nuova connessione al database PostgreSQL se non esiste già."""
     db = getattr(g, '_database', None)
     if db is None:
-        # Gestisce la connessione tramite la stringa DATABASE_URL di Render
         db = g._database = psycopg2.connect(DATABASE_URL, sslmode='require')
     return db
 
 @app.teardown_appcontext
 def close_connection(exception):
-    """Chiude automaticamente la connessione al database a fine richiesta."""
     db = getattr(g, '_database', None)
     if db is not None:
         db.close()
 
 def init_db():
-    """Inizializza il database creando le tabelle se non esistono (Sintassi PostgreSQL)."""
     with app.app_context():
         db = get_db()
         cur = db.cursor()
         
-        # Tabella Clienti
+        # Tabella Clienti Completa
         cur.execute("""
             CREATE TABLE IF NOT EXISTS clienti (
                 id SERIAL PRIMARY KEY,
                 nome TEXT NOT NULL,
-                email TEXT,
-                telefono TEXT
+                indirizzo TEXT,
+                partita_iva TEXT,
+                codice_fiscale TEXT,
+                codice_sdi TEXT,
+                pec TEXT
             )
         """)
         
@@ -152,7 +150,7 @@ def vedi_fattura(fattura_id):
     f = cur.fetchone()
     cur.close()
     if not f:
-        flash("Fattura non trovata.", "danger")
+        flash("Fattura non trouvée.", "danger")
         return redirect(url_for("fatture"))
     return render_template("fattura_dettaglio.html", f=f)
 
@@ -168,6 +166,68 @@ def delete_fattura(fattura_id):
     return redirect(url_for("fatture"))
 
 
+# --- SEZIONE CLIENTI (GESTIONE COMPLETA) ---
+
+@app.route("/clienti", methods=["GET", "POST"])
+def clienti():
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    
+    if request.method == "POST":
+        nome = request.form.get("nome")
+        indirizzo = request.form.get("indirizzo")
+        partita_iva = request.form.get("partita_iva")
+        codice_fiscale = request.form.get("codice_fiscale")
+        codice_sdi = request.form.get("codice_sdi")
+        pec = request.form.get("pec")
+        
+        cur.execute("""
+            INSERT INTO clienti (nome, indirizzo, partita_iva, codice_fiscale, codice_sdi, pec)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (nome, indirizzo, partita_iva, codice_fiscale, codice_sdi, pec))
+        db.commit()
+        flash("Cliente aggiunto con successo!", "success")
+        return redirect(url_for("clienti"))
+
+    cur.execute("SELECT * FROM clienti ORDER BY nome ASC")
+    elenco_clienti = cur.fetchall()
+    cur.close()
+    return render_template("clienti.html", clienti=elenco_clienti)
+
+
+@app.route("/modifica_cliente/<int:cliente_id>", methods=["POST"])
+def modifica_cliente(cliente_id):
+    db = get_db()
+    cur = db.cursor()
+    
+    nome = request.form.get("nome")
+    indirizzo = request.form.get("indirizzo")
+    partita_iva = request.form.get("partita_iva")
+    codice_fiscale = request.form.get("codice_fiscale")
+    codice_sdi = request.form.get("codice_sdi")
+    pec = request.form.get("pec")
+    
+    cur.execute("""
+        UPDATE clienti 
+        SET nome=%s, indirizzo=%s, partita_iva=%s, codice_fiscale=%s, codice_sdi=%s, pec=%s
+        WHERE id=%s
+    """, (nome, indirizzo, partita_iva, codice_fiscale, codice_sdi, pec, cliente_id))
+    db.commit()
+    cur.close()
+    return jsonify({"success": True})
+
+
+@app.route("/delete_cliente/<int:cliente_id>")
+def delete_cliente(cliente_id):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("DELETE FROM clienti WHERE id = %s", (cliente_id,))
+    db.commit()
+    cur.close()
+    flash("Cliente eliminato con successo.", "success")
+    return redirect(url_for("clienti"))
+
+
 # --- DASHBOARD ANALISI ---
 
 @app.route("/dashboard")
@@ -175,7 +235,6 @@ def dashboard():
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
-    # 1. KPI Monetari
     cur.execute("""
         SELECT 
             COALESCE(SUM(totale), 0) as totale_fatturato,
@@ -187,7 +246,6 @@ def dashboard():
     """)
     stats = cur.fetchone()
 
-    # 2. Conteggio documenti
     cur.execute("""
         SELECT 
             COUNT(*) as totale_invii,
@@ -197,7 +255,6 @@ def dashboard():
     """)
     conteggi = cur.fetchone()
 
-    # 3. Andamento mensile ultimi 6 mesi (Adattato a PostgreSQL usando SUBSTRING)
     cur.execute("""
         SELECT 
             SUBSTRING(data FROM 1 FOR 7) as mese,
@@ -211,7 +268,6 @@ def dashboard():
     trend_mensile = cur.fetchall()
     trend_mensile = trend_mensile[::-1]
 
-    # 4. Top 5 Clienti
     cur.execute("""
         SELECT 
             cliente_nome,
@@ -234,17 +290,7 @@ def dashboard():
     )
 
 
-# --- SEZIONE CLIENTI, PRODOTTI, NOTE e LOGOUT ---
-
-@app.route("/clienti")
-def clienti():
-    db = get_db()
-    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    cur.execute("SELECT * FROM clienti ORDER BY nome ASC")
-    elenco_clienti = cur.fetchall()
-    cur.close()
-    return render_template("clienti.html", clienti=elenco_clienti)
-
+# --- PRODOTTI, NOTE e LOGOUT ---
 
 @app.route("/prodotti")
 def prodotti():
