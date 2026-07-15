@@ -1170,6 +1170,47 @@ def dashboard():
 # ==============================================================================
 # 10.NOTE 
 # ==============================================================================
+
+@app.route("/note")
+def note_page():
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    
+    # --- BLOCCO DI CORREZIONE AUTOMATICA SCHEMA ---
+    try:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS note (
+                id SERIAL PRIMARY KEY,
+                titolo TEXT DEFAULT '',
+                contenuto TEXT DEFAULT '',
+                data_creazione TEXT DEFAULT CURRENT_DATE::TEXT,
+                data_modifica TEXT DEFAULT CURRENT_DATE::TEXT
+            );
+        """)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"Errore creazione iniziale tabella note: {e}")
+
+    # Ora eseguiamo la query forzando il cast a TEXT di tutto per evitare conflitti
+    try:
+        cur.execute("""
+            SELECT id, titolo, contenuto, 
+                   COALESCE(data_modifica::TEXT, data_creazione::TEXT) as data_modifica 
+            FROM note 
+            ORDER BY id DESC
+        """)
+        elenco_note = cur.fetchall()
+    except Exception as e:
+        db.rollback()
+        print(f"Errore lettura note: {e}")
+        elenco_note = []
+    finally:
+        cur.close()
+        
+    return render_template("note.html", note=elenco_note)
+
+
 @app.route("/nota/<int:id>")
 def get_nota_api(id):
     db = get_db()
@@ -1188,45 +1229,73 @@ def get_nota_api(id):
     })
 
 
+@app.route("/nuova_nota", methods=["POST"])
+def nuova_nota_api():
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    data_oggi = datetime.now().strftime("%Y-%m-%d")
+    try:
+        # Usiamo un approccio sicuro: inseriamo i valori provando a fare il cast esplicito a TEXT
+        cur.execute("""
+            INSERT INTO note (titolo, contenuto, data_creazione, data_modifica) 
+            VALUES ('Senza titolo', '', %s::TEXT, %s::TEXT) 
+            RETURNING id
+        """, (data_oggi, data_oggi))
+        nuovo_id = cur.fetchone()["id"]
+        db.commit()
+        return jsonify({"success": True, "id": nuevo_id})
+    except Exception as e:
+        db.rollback()
+        # Se fallisce per mismatch di tipo (colonne effettivamente TIMESTAMP nel DB fisico), usiamo NOW()
+        try:
+            cur.execute("""
+                INSERT INTO note (titolo, contenuto, data_creazione, data_modifica) 
+                VALUES ('Senza titolo', '', NOW(), NOW()) 
+                RETURNING id
+            """)
+            nuovo_id = cur.fetchone()["id"]
+            db.commit()
+            return jsonify({"success": True, "id": nuovo_id})
+        except Exception as e_inner:
+            db.rollback()
+            print(f"Errore drastico creazione nota: {e_inner}")
+            return jsonify({"success": False, "error": str(e_inner)}), 500
+    finally:
+        cur.close()
+
+
 @app.route("/salva_nota/<int:id>", methods=["POST"])
 def salva_nota_api(id):
     data = request.get_json() or {}
     titolo = data.get("titolo", "").strip()
     contenuto = data.get("contenuto", "")
+    data_oggi = datetime.now().strftime("%Y-%m-%d")
 
     db = get_db()
     cur = db.cursor()
     try:
         cur.execute("""
             UPDATE note 
-            SET titolo = %s, contenuto = %s, data_modifica = CURRENT_DATE::TEXT 
+            SET titolo = %s, contenuto = %s, data_modifica = %s::TEXT 
             WHERE id = %s
-        """, (titolo if titolo else "Senza titolo", contenuto, id))
+        """, (titolo if titolo else "Senza titolo", contenuto, data_oggi, id))
         db.commit()
         return jsonify({"success": True})
     except Exception as e:
         db.rollback()
-        return jsonify({"success": False, "error": str(e)}), 500
-    finally:
-        cur.close()
-
-
-@app.route("/nuova_nota", methods=["POST"])
-def nuova_nota_api():
-    db = get_db()
-    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    try:
-        cur.execute("""
-            INSERT INTO note (titolo, contenuto, data_creazione, data_modifica) 
-            VALUES ('Senza titolo', '', CURRENT_DATE::TEXT, CURRENT_DATE::TEXT) 
-            RETURNING id
-        """)
-        nuovo_id = cur.fetchone()["id"]
-        db.commit()
-        return jsonify({"success": True, "id": nuovo_id})
-    except Exception as e:
-        db.rollback()
-        return jsonify({"success": False, "error": str(e)}), 500
+        # Fallback nel caso in cui data_modifica sia rimasto rigidamente un TIMESTAMP
+        try:
+            cur.execute("""
+                UPDATE note 
+                SET titolo = %s, contenuto = %s, data_modifica = NOW() 
+                WHERE id = %s
+            """, (titolo if titolo else "Senza titolo", contenuto, id))
+            db.commit()
+            return jsonify({"success": True})
+        except Exception as e_inner:
+            db.rollback()
+            print(f"Errore drastico salvataggio nota: {e_inner}")
+            return jsonify({"success": False, "error": str(e_inner)}), 500
     finally:
         cur.close()
 
@@ -1244,54 +1313,6 @@ def elimina_nota_api(id):
         return jsonify({"success": False, "error": str(e)}), 500
     finally:
         cur.close()
-        
-@app.route("/note")
-def note_page():
-    db = get_db()
-    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    
-    # --- BLOCCO DI CORREZIONE AUTOMATICA SCHEMA ---
-    try:
-        # Crea la tabella se non esiste affatto
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS note (
-                id SERIAL PRIMARY KEY,
-                titolo TEXT DEFAULT '',
-                contenuto TEXT DEFAULT '',
-                data_creazione TEXT DEFAULT CURRENT_DATE,
-                data_modifica TEXT DEFAULT CURRENT_DATE
-            );
-        """)
-        db.commit()
-        
-        # Aggiunge data_creazione se manca
-        cur.execute("""
-            ALTER TABLE note ADD COLUMN IF NOT EXISTS data_creazione TEXT DEFAULT CURRENT_DATE;
-        """)
-        db.commit()
-        
-        # Aggiunge data_modifica se manca
-        cur.execute("""
-            ALTER TABLE note ADD COLUMN IF NOT EXISTS data_modifica TEXT DEFAULT CURRENT_DATE;
-        """)
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        print(f"Errore migrazione tabella note: {e}")
-    # -----------------------------------------------
-
-    # Ora esegui la query sicura delle note
-    # Sostituisci la query precedente con questa:
-    cur.execute("""
-        SELECT id, titolo, contenuto, 
-               COALESCE(data_modifica::TEXT, data_creazione::TEXT) as data_modifica 
-        FROM note 
-        ORDER BY id DESC
-    """)
-
-    elenco_note = cur.fetchall()
-    cur.close()
-    return render_template("note.html", note=elenco_note)
 
 # ==============================================================================
 # 11. AVVIO APPLICAZIONE
