@@ -21,3 +21,4 @@ BANCHE = {
         "nome": "Poste Italiane - IT04B0760110200001078221247",
         "label_pdf": "Poste Italiane - IBAN IT04B0760110200001078221247"
     }
+}
