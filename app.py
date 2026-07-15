@@ -3,6 +3,7 @@ from datetime import datetime
 import psycopg2
 import psycopg2.extras
 from flask import Flask, render_template, request, redirect, url_for, g, jsonify, flash
+from config import BANCHE, PASSWORD_ACCESSO
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "chiave-segreta-temporanea")
@@ -209,18 +210,20 @@ def fatture():
     cur.execute("SELECT * FROM fatture ORDER BY data DESC, numero DESC")
     elenco_fatture = cur.fetchall()
     cur.close()
-    return render_template("fatture.html", fatture=elenco_fatture)
+    return render_template(
+        "fatture.html", 
+        fatture=elenco_fatture, 
+        password_eliminazione=PASSWORD_ACCESSO
+    )
 
 
 @app.route("/nuova_fattura", methods=["GET", "POST"])
 def nueva_fattura():
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    
-    elenco_banche = [
-        {"id": "BPER", "nome": "BPER Banca di Luserna San Giovanni - IT35S0538730600000004332185"},
-        {"id": "POSTE", "nome": "Poste Italiane - IT04B0760110200001078221247"}
-    ]
+
+    # Convertiamo il dizionario in una lista adatta al template
+    elenco_banche = list(BANCHE.values())
     
     if request.method == "POST":
         numero = request.form.get("numero")
