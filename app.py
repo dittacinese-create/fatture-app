@@ -1167,9 +1167,28 @@ def dashboard():
         trend_mensile=trend_mensile
     )
 
+# ==============================================================================
+# 10. NOTE
+# ==============================================================================
+
+@app.route("/note")
+def note_page():
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    
+    # Recupera tutte le note ordinate in modo decrescente (dalle ultime modificate/create)
+    cur.execute("""
+        SELECT id, titolo, contenuto, 
+               COALESCE(data_modifica, data_creazione) as data_modifica 
+        FROM note 
+        ORDER BY id DESC
+    """)
+    elenco_note = cur.fetchall()
+    cur.close()
+    return render_template("note.html", note=elenco_note)
 
 # ==============================================================================
-# 10. AVVIO APPLICAZIONE
+# 11. AVVIO APPLICAZIONE
 # ==============================================================================
 
 if __name__ == "__main__":
