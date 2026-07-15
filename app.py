@@ -59,11 +59,11 @@ def init_db():
         """)
         db.commit()
 
-        # Migrazioni atomiche per colonne aggiuntive (PostgreSQL)
+        # Migrazioni per colonne addizionali strutturate
         colonne_da_aggiungere = [
             ("regime_iva", "TEXT DEFAULT '22'"),
             ("tipo", "TEXT DEFAULT 'MANUALE'"),
-            ("banca_id", "TEXT DEFAULT 'BPER'"),
+            ("banca_id", "TEXT"),
             ("numero_ddt", "TEXT"),
             ("data_ddt", "TEXT")
         ]
@@ -124,9 +124,6 @@ if DATABASE_URL:
 def index():
     return redirect(url_for("fatture"))
 
-
-# --- SEZIONE FATTURE ---
-
 @app.route("/fatture")
 def fatture():
     db = get_db()
@@ -154,9 +151,9 @@ def nuova_fattura():
         cliente_id_raw = request.form.get("cliente_id")
         tipo = request.form.get("tipo", "MANUALE")
         regime_iva = request.form.get("regime_iva", "22")
-        banca_id = request.form.get("banca_id", "BPER")
+        banca_id = request.form.get("banca_id")
         totale = request.form.get("totale", 0.0)
-        note = request.form.get("note")
+        note = request.form.get("note", "")  # Vuoto di default, nessuna alterazione automatica
         stato_pagamento = request.form.get("stato_pagamento", "Non pagata")
         stato = request.form.get("stato", "BOZZA")
         
@@ -211,14 +208,21 @@ def vedi_fattura(fattura_id):
         cliente = cur.fetchone()
     
     cur.execute("SELECT * FROM righe_fattura WHERE fattura_id = %s ORDER BY id ASC", (fattura_id,))
-    righe = cur.fetchall()
+    righe_raw = cur.fetchall()
     cur.close()
+    
+    # Risolviamo l'errore del template iniettando 'prezzo' come alias di 'prezzo_unitario'
+    righe = []
+    for r in righe_raw:
+        d = dict(r)
+        d["prezzo"] = d.get("prezzo_unitario", 0.0)
+        righe.append(d)
     
     fattura_dict = dict(f)
     if "regime_iva" not in fattura_dict or not fattura_dict["regime_iva"]: 
         fattura_dict["regime_iva"] = "22"
-    if "banca_id" not in fattura_dict or not fattura_dict["banca_id"]: 
-        fattura_dict["banca_id"] = "BPER"
+    if "banca_id" not in fattura_dict: 
+        fattura_dict["banca_id"] = ""
     
     valore_totale = fattura_dict.get("totale", 0.0) or 0.0
     
@@ -244,7 +248,7 @@ def vedi_fattura(fattura_id):
     )
 
 
-# --- ROTTE DI AGGIORNAMENTO E GESTIONE AJAX (Richieste da fattura_dettaglio.html) ---
+# --- ROTTE DI AGGIORNAMENTO STRUTTURATO ---
 
 @app.route("/aggiorna_testata/<int:fattura_id>", methods=["POST"])
 @app.route("/aggiorna_fattura_ajax/<int:fattura_id>", methods=["POST"])
@@ -256,39 +260,44 @@ def aggiorna_fattura_ajax(fattura_id):
         data = request.get_json()
         numero = data.get("numero")
         data_doc = data.get("data")
+        data_scadenza = data.get("data_scadenza")
         stato_pagamento = data.get("stato_pagamento")
         stato = data.get("stato")
         banca_id = data.get("banca_id")  
         regime_iva = data.get("regime_iva")
+        note = data.get("note")
         
         cur.execute("""
             UPDATE fatture 
-            SET numero=COALESCE(%s, numero), data=COALESCE(%s, data), 
+            SET numero=COALESCE(%s, numero), data=COALESCE(%s, data), data_scadenza=COALESCE(%s, data_scadenza),
                 stato_pagamento=COALESCE(%s, stato_pagamento), stato=COALESCE(%s, stato),
-                banca_id=COALESCE(%s, banca_id), regime_iva=COALESCE(%s, regime_iva)
+                banca_id=COALESCE(%s, banca_id), regime_iva=COALESCE(%s, regime_iva), note=COALESCE(%s, note)
             WHERE id=%s
-        """, (numero, data_doc, stato_pagamento, stato, banca_id, regime_iva, fattura_id))
+        """, (numero, data_doc, data_scadenza, stato_pagamento, stato, banca_id, regime_iva, note, fattura_id))
     else:
         numero = request.form.get("numero")
         data_doc = request.form.get("data")
+        data_scadenza = request.form.get("data_scadenza")
         stato_pagamento = request.form.get("stato_pagamento")
         stato = request.form.get("stato")
         banca_id = request.form.get("banca_id") 
         regime_iva = request.form.get("regime_iva")
+        note = request.form.get("note")
         
         cur.execute("""
             UPDATE fatture 
-            SET numero=%s, data=%s, stato_pagamento=%s, stato=%s, 
-                banca_id=COALESCE(%s, banca_id), regime_iva=COALESCE(%s, regime_iva)
+            SET numero=COALESCE(%s, numero), data=COALESCE(%s, data), data_scadenza=COALESCE(%s, data_scadenza), 
+                stato_pagamento=COALESCE(%s, stato_pagamento), stato=COALESCE(%s, stato), 
+                banca_id=COALESCE(%s, banca_id), regime_iva=COALESCE(%s, regime_iva), note=COALESCE(%s, note)
             WHERE id=%s
-        """, (numero, data_doc, stato_pagamento, stato, banca_id, regime_iva, fattura_id))
+        """, (numero, data_doc, data_scadenza, stato_pagamento, stato, banca_id, regime_iva, note, fattura_id))
         
     db.commit()
     cur.close()
     
     if request.is_json:
         return jsonify({"success": True})
-    flash("Fattura aggiornata con successo.", "success")
+    flash("Fattura salvata con successo.", "success")
     return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
 
 
@@ -297,7 +306,7 @@ def add_riga():
     fattura_id = request.form.get("fattura_id")
     descrizione = request.form.get("descrizione")
     quantita = request.form.get("quantita", 1.0)
-    prezzo_unitario = request.form.get("prezzo_unitario", 0.0)
+    prezzo_unitario = request.form.get("prezzo", request.form.get("prezzo_unitario", 0.0))
     unita_misura = request.form.get("unita_misura", "mq")
     
     try:
@@ -357,14 +366,11 @@ def delete_fattura(fattura_id):
     flash("Fattura eliminata con successo.", "success")
     return redirect(url_for("fatture"))
 
-
 # --- SEZIONE CLIENTI ---
-
 @app.route("/clienti", methods=["GET", "POST"])
 def clienti():
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    
     if request.method == "POST":
         nome = request.form.get("nome")
         indirizzo = request.form.get("indirizzo")
@@ -372,7 +378,6 @@ def clienti():
         codice_fiscale = request.form.get("codice_fiscale")
         codice_sdi = request.form.get("codice_sdi")
         pec = request.form.get("pec")
-        
         cur.execute("""
             INSERT INTO clienti (nome, indirizzo, partita_iva, codice_fiscale, codice_sdi, pec)
             VALUES (%s, %s, %s, %s, %s, %s)
@@ -380,63 +385,39 @@ def clienti():
         db.commit()
         flash("Cliente aggiunto con successo!", "success")
         return redirect(url_for("clienti"))
-
     cur.execute("SELECT * FROM clienti ORDER BY nome ASC")
     elenco_clienti = cur.fetchall()
     cur.close()
     return render_template("clienti.html", clienti=elenco_clienti)
 
-
 # --- SEZIONE PRODOTTI ---
-
 @app.route("/prodotti", methods=["GET", "POST"])
 def prodotti():
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    
     if request.method == "POST":
         nome = request.form.get("nome")
         prezzo_base = request.form.get("prezzo_base", 0.0)
         unita_misura = request.form.get("unita_misura", "mq")
-        
-        try:
-            prezzo_base = float(prezzo_base)
-        except:
-            prezzo_base = 0.0
-            
-        cur.execute("""
-            INSERT INTO prodotti (nome, prezzo_base, unita_misura)
-            VALUES (%s, %s, %s)
-        """, (nome, prezzo_base, unita_misura))
+        try: prezzo_base = float(prezzo_base)
+        except: prezzo_base = 0.0
+        cur.execute("INSERT INTO prodotti (nome, prezzo_base, unita_misura) VALUES (%s, %s, %s)", (nome, prezzo_base, unita_misura))
         db.commit()
-        flash("Prodotto aggiunto con successo!", "success")
         return redirect(url_for("prodotti"))
-
     cur.execute("SELECT * FROM prodotti ORDER BY nome ASC")
     elenco_prodotti = cur.fetchall()
     cur.close()
     return render_template("prodotti.html", prodotti=elenco_prodotti)
-
 
 @app.route("/modifica_prodotto/<int:prodotto_id>", methods=["POST"])
 def modifica_prodotto(prodotto_id):
     db = get_db()
     cur = db.cursor()
     data = request.get_json()
-    
-    nome = data.get("nome")
-    prezzo_base = data.get("prezzo_base", 0.0)
-    unita_misura = data.get("unita_misura", "mq")
-    
-    cur.execute("""
-        UPDATE prodotti 
-        SET nome=%s, prezzo_base=%s, unita_misura=%s
-        WHERE id=%s
-    """, (nome, prezzo_base, unita_misura, prodotto_id))
+    cur.execute("UPDATE prodotti SET nome=%s, prezzo_base=%s, unita_misura=%s WHERE id=%s", (data.get("nome"), data.get("prezzo_base", 0.0), data.get("unita_misura", "mq"), prodotto_id))
     db.commit()
     cur.close()
     return jsonify({"success": True})
-
 
 @app.route("/delete_prodotto/<int:prodotto_id>")
 def delete_prodotto(prodotto_id):
@@ -445,73 +426,23 @@ def delete_prodotto(prodotto_id):
     cur.execute("DELETE FROM prodotti WHERE id = %s", (prodotto_id,))
     db.commit()
     cur.close()
-    flash("Prodotto eliminato con successo.", "success")
     return redirect(url_for("prodotti"))
 
-
 # --- DASHBOARD ANALISI ---
-
 @app.route("/dashboard")
 def dashboard():
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    
-    cur.execute("""
-        SELECT 
-            COALESCE(SUM(totale), 0) as totale_fatturato,
-            COALESCE(SUM(CASE WHEN stato_pagamento = 'Pagata' THEN totale ELSE 0 END), 0) as totale_incassato,
-            COALESCE(SUM(CASE WHEN stato_pagamento = 'In attesa' THEN totale ELSE 0 END), 0) as totale_attesa,
-            COALESCE(SUM(CASE WHEN stato_pagamento = 'Non pagata' OR stato_pagamento IS NULL THEN totale ELSE 0 END), 0) as totale_non_pagato
-        FROM fatture
-        WHERE stato = 'CHIUSA'
-    """)
+    cur.execute("SELECT COALESCE(SUM(totale),0) as totale_fatturato, COALESCE(SUM(CASE WHEN stato_pagamento='Pagata' THEN totale ELSE 0 END),0) as totale_incassato, COALESCE(SUM(CASE WHEN stato_pagamento='In attesa' THEN totale ELSE 0 END),0) as totale_attesa, COALESCE(SUM(CASE WHEN stato_pagamento='Non pagata' THEN totale ELSE 0 END),0) as totale_non_pagato FROM fatture WHERE stato='CHIUSA'")
     stats = cur.fetchone()
-
-    cur.execute("""
-        SELECT 
-            COUNT(*) as totale_invii,
-            COUNT(CASE WHEN stato = 'BOZZA' THEN 1 END) as bozze,
-            COUNT(CASE WHEN stato = 'CHIUSA' THEN 1 END) as chiuse
-        FROM fatture
-    """)
+    cur.execute("SELECT COUNT(*) as totale_invii, COUNT(CASE WHEN stato='BOZZA' THEN 1 END) as bozze, COUNT(CASE WHEN stato='CHIUSA' THEN 1 END) as chiuse FROM fatture")
     conteggi = cur.fetchone()
-
-    cur.execute("""
-        SELECT 
-            SUBSTRING(data FROM 1 FOR 7) as mese,
-            COALESCE(SUM(totale), 0) as totale
-        FROM fatture
-        WHERE stato = 'CHIUSA' AND data IS NOT NULL AND data != ''
-        GROUP BY SUBSTRING(data FROM 1 FOR 7)
-        ORDER BY mese DESC
-        LIMIT 6
-    """)
-    trend_mensile = cur.fetchall()
-    trend_mensile = trend_mensile[::-1]
-
-    cur.execute("""
-        SELECT 
-            cliente_nome,
-            COALESCE(SUM(totale), 0) as totale
-        FROM fatture
-        WHERE stato = 'CHIUSA'
-        GROUP BY cliente_id, cliente_nome
-        ORDER BY totale DESC
-        LIMIT 5
-    """)
+    cur.execute("SELECT SUBSTRING(data FROM 1 FOR 7) as mese, SUM(totale) as totale FROM fatture WHERE stato='CHIUSA' AND data IS NOT NULL AND data!='' GROUP BY SUBSTRING(data FROM 1 FOR 7) ORDER BY mese DESC LIMIT 6")
+    trend_mensile = cur.fetchall()[::-1]
+    cur.execute("SELECT cliente_nome, SUM(totale) as totale FROM fatture WHERE stato='CHIUSA' GROUP BY cliente_id, cliente_nome ORDER BY totale DESC LIMIT 5")
     top_clienti = cur.fetchall()
     cur.close()
-
-    return render_template(
-        "dashboard.html",
-        stats=stats,
-        conteggi=conteggi,
-        trend_mensile=trend_mensile,
-        top_clienti=top_clienti
-    )
-
-
-# --- SEZIONE NOTE ---
+    return render_template("dashboard.html", stats=stats, conteggi=conteggi, trend_mensile=trend_mensile, top_clienti=top_clienti)
 
 @app.route("/note")
 def note():
@@ -522,12 +453,9 @@ def note():
     cur.close()
     return render_template("note.html", note=elenco_note)
 
-
 @app.route("/logout")
 def logout():
-    flash("Disconnessione effettuata con successo.", "info")
     return redirect(url_for("fatture"))
-
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
