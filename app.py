@@ -569,6 +569,7 @@ def delete_riga_ddt(riga_id, fattura_id):
 @app.route("/pdf/<int:fattura_id>")
 def genera_pdf(fattura_id):
     from flask import Response, render_template
+    import sys
     
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
@@ -579,8 +580,7 @@ def genera_pdf(fattura_id):
     
     if not f:
         cur.close()
-        flash("Fattura non trovata.", "danger")
-        return redirect(url_for("fatture"))
+        return "Errore: Fattura non trovata nel database.", 404
         
     # 2. Recupera i dati del cliente collegato
     cliente = None
@@ -588,7 +588,7 @@ def genera_pdf(fattura_id):
         cur.execute("SELECT * FROM clienti WHERE id = %s", (f["cliente_id"],))
         cliente = cur.fetchone()
         
-    # 3. Recupera le righe (in base al tipo: FORNITURA dai DDT o MANUALE dalle righe_fattura)
+    # 3. Recupera le righe
     righe = []
     if f["tipo"] == "FORNITURA":
         cur.execute("""
@@ -606,14 +606,13 @@ def genera_pdf(fattura_id):
         righe_raw = cur.fetchall()
         for r in righe_raw:
             d = dict(r)
-            # Gestisce la discrepanza sul nome della colonna prezzo_unitario / prezzo
             d["prezzo"] = d.get("prezzo_unitario", d.get("prezzo", 0.0))
             d["totale"] = d["quantita"] * d["prezzo"]
             righe.append(d)
             
     cur.close()
 
-    # 4. Calcoli economici per il layout del PDF
+    # 4. Calcoli economici
     valore_totale = f.get("totale", 0.0) or 0.0
     try:
         aliquota = float(f["regime_iva"])
@@ -623,11 +622,13 @@ def genera_pdf(fattura_id):
     valore_imponibile = valore_totale / (1 + (aliquota / 100.0))
     valore_iva = valore_totale - valore_imponibile
 
-    # 5. Generazione del file HTML e compilazione in PDF (usa WeasyPrint)
+    # 5. Generazione PDF con tracciamento errore bloccante
     try:
         import weasyprint
+        
+        # Se il tuo file HTML del PDF si chiama in un altro modo (es. fattura_pdf.html), cambialo qui sotto:
         html_content = render_template(
-            "fattura_pdf_template.html",  # o il nome esatto del tuo file .html per il PDF
+            "fattura_pdf_template.html", 
             fattura=dict(f),
             cliente=cliente,
             righe=righe,
@@ -643,9 +644,9 @@ def genera_pdf(fattura_id):
             headers={"Content-Disposition": f"attachment; filename=Fattura_{f['numero']}.pdf"}
         )
     except Exception as e:
-        print(f"Errore WeasyPrint: {e}")
-        flash("Errore interno durante la generazione del PDF.", "danger")
-        return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
+        import traceback
+        errore_dettagliato = traceback.format_exc()
+        return f"<h3>Errore durante la generazione del PDF:</h3><pre>{errore_dettagliato}</pre>", 500
 
 @app.route("/chiudi_fattura/<int:fattura_id>")
 def chiudi_fattura(fattura_id):
