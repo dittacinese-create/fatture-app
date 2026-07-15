@@ -1127,32 +1127,59 @@ def dashboard():
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
-    # Recuperiamo tutte le fatture con i campi corrispondenti al foglio Google Sheets
-    # Adatta i nomi dei campi se differiscono leggermente nel tuo database
     try:
+        # 1. Recuperiamo tutte le fatture per la tabella
+        # Usiamo COALESCE e controlli flessibili sui nomi dei campi per essere sicuri che vengano letti
         cur.execute("""
-            SELECT 
-                id,
-                numero_fattura,
-                cliente,
-                data_fattura,
-                data_scadenza,
-                importo_totale,
-                note,
-                stato,
-                data_pagamento
-            FROM fatture
+            SELECT * FROM fatture 
             ORDER BY id ASC
         """)
         fatture = cur.fetchall()
+        
+        # 2. Inizializziamo i contatori per i totali
+        totale_generale = 0.0
+        totale_pagato = 0.0
+        totale_mancante = 0.0
+        
+        # 3. Calcoliamo i totali ciclando sulle fatture in modo sicuro da Python
+        for f in fatture:
+            # Identifica l'importo (gestisce sia stringhe con la virgola che float/numeric)
+            importo_val = f.get('importo_totale') or f.get('importo') or f.get('totale') or 0
+            if isinstance(importo_val, str):
+                try:
+                    # Rimuove punti delle migliaia e converte la virgola in punto decimale
+                    importo_val = float(importo_val.replace('.', '').replace(',', '.'))
+                except ValueError:
+                    importo_val = 0.0
+            else:
+                importo_val = float(importo_val)
+                
+            totale_generale += importo_val
+            
+            # Identifica lo stato di pagamento
+            stato_val = str(f.get('stato') or '').strip().lower()
+            if stato_val == 'pagato':
+                totale_pagato += importo_val
+            else:
+                totale_mancante += importo_val
+
     except Exception as e:
         db.rollback()
         print(f"Errore caricamento dati dashboard: {e}")
         fatture = []
+        totale_generale = 0.0
+        totale_pagato = 0.0
+        totale_mancante = 0.0
     finally:
         cur.close()
         
-    return render_template("dashboard.html", fatture=fatture)
+    return render_template(
+        "dashboard.html", 
+        fatture=fatture,
+        totale_generale=totale_generale,
+        totale_pagato=totale_pagato,
+        totale_mancante=totale_mancante
+    )
 
 # ==============================================================================
 # 10.NOTE 
