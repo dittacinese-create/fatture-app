@@ -1168,7 +1168,7 @@ def dashboard():
     )
 
 # ==============================================================================
-# 10. NOTE
+# 10.NOTE 
 # ==============================================================================
 
 @app.route("/note")
@@ -1176,7 +1176,37 @@ def note_page():
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
-    # Recupera tutte le note ordinate in modo decrescente (dalle ultime modificate/create)
+    # --- BLOCCO DI CORREZIONE AUTOMATICA SCHEMA ---
+    try:
+        # Crea la tabella se non esiste affatto
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS note (
+                id SERIAL PRIMARY KEY,
+                titolo TEXT DEFAULT '',
+                contenuto TEXT DEFAULT '',
+                data_creazione TEXT DEFAULT CURRENT_DATE,
+                data_modifica TEXT DEFAULT CURRENT_DATE
+            );
+        """)
+        db.commit()
+        
+        # Aggiunge data_creazione se manca
+        cur.execute("""
+            ALTER TABLE note ADD COLUMN IF NOT EXISTS data_creazione TEXT DEFAULT CURRENT_DATE;
+        """)
+        db.commit()
+        
+        # Aggiunge data_modifica se manca
+        cur.execute("""
+            ALTER TABLE note ADD COLUMN IF NOT EXISTS data_modifica TEXT DEFAULT CURRENT_DATE;
+        """)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"Errore migrazione tabella note: {e}")
+    # -----------------------------------------------
+
+    # Ora esegui la query sicura delle note
     cur.execute("""
         SELECT id, titolo, contenuto, 
                COALESCE(data_modifica, data_creazione) as data_modifica 
