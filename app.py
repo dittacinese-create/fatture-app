@@ -354,12 +354,19 @@ def aggiorna_fattura_ajax(fattura_id):
         note = data.get("note")
         totale_pagato = data.get("totale_pagato")
         
+        # Se lo stato viene impostato su 'Pagata', prendiamo il totale della fattura e lo copiamo nel pagato
+        if stato_pagamento == "Pagata":
+            cur.execute("SELECT totale FROM fatture WHERE id = %s", (fattura_id,))
+            f_tot = cur.fetchone()
+            if f_tot:
+                totale_pagato = f_tot[0]
+        
         cur.execute("""
             UPDATE fatture 
             SET numero=COALESCE(%s, numero), data=COALESCE(%s, data), data_scadenza=COALESCE(%s, data_scadenza),
                 data_pagamento=COALESCE(%s, data_pagamento), stato_pagamento=COALESCE(%s, stato_pagamento), 
                 stato=COALESCE(%s, stato), banca_id=COALESCE(%s, banca_id), regime_iva=COALESCE(%s, regime_iva), 
-                note=COALESCE(%s, note), totale_pagato=COALESCE(%s, totale_pagato)
+                note=%s, totale_pagato=COALESCE(%s, totale_pagato)
             WHERE id=%s
         """, (numero, data_doc, data_scadenza, data_pagamento, stato_pagamento, stato, banca_id, regime_iva, note, totale_pagato, fattura_id))
     else:
@@ -374,22 +381,26 @@ def aggiorna_fattura_ajax(fattura_id):
         note = request.form.get("note")
         totale_pagato = request.form.get("totale_pagato")
         
-        if totale_pagato is not None:
-            try: totale_pagato = float(totale_pagato)
-            except: totale_pagato = 0.0
+        if stato_pagamento == "Pagata":
+            cur.execute("SELECT totale FROM fatture WHERE id = %s", (fattura_id,))
+            f_tot = cur.fetchone()
+            if f_tot:
+                totale_pagato = f_tot[0]
+        else:
+            if totale_pagato is not None:
+                try: totale_pagato = float(totale_pagato)
+                except: totale_pagato = 0.0
 
         cur.execute("""
             UPDATE fatture 
             SET numero=COALESCE(%s, numero), data=COALESCE(%s, data), data_scadenza=COALESCE(%s, data_scadenza), 
                 data_pagamento=COALESCE(%s, data_pagamento), stato_pagamento=COALESCE(%s, stato_pagamento), 
                 stato=COALESCE(%s, stato), banca_id=COALESCE(%s, banca_id), regime_iva=COALESCE(%s, regime_iva), 
-                note=COALESCE(%s, note), totale_pagato=COALESCE(%s, totale_pagato)
+                note=%s, totale_pagato=COALESCE(%s, totale_pagato)
             WHERE id=%s
         """, (numero, data_doc, data_scadenza, data_pagamento, stato_pagamento, stato, banca_id, regime_iva, note, totale_pagato, fattura_id))
         
     db.commit()
-    
-    # Ricalcoliamo il totale nel caso in cui sia cambiata l'aliquota IVA
     ricalcola_totale_fattura(cur, fattura_id)
     db.commit()
     cur.close()

@@ -389,13 +389,16 @@ async function salvaFatturaUnificato() {
     btn.disabled = true;
     btn.textContent = "Salvataggio...";
 
+    const noteVal = document.getElementById("note").value;
+
     try {
         const resTestata = await fetch("/aggiorna_testata/{{ fattura.id }}", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 numero: document.getElementById("edit_numero").value,
-                data: document.getElementById("edit_data").value
+                data: document.getElementById("edit_data").value,
+                note: noteVal // Inviamo le note anche qui per sicurezza
             })
         });
 
@@ -407,13 +410,13 @@ async function salvaFatturaUnificato() {
                 totale_pagato: parseFloat(document.getElementById("totale_pagato").value) || 0.0,
                 data_scadenza: document.getElementById("data_scadenza").value || null,
                 data_pagamento: document.getElementById("data_pagamento").value || null,
-                note: document.getElementById("note").value || null
+                note: noteVal
             })
         });
 
         if (resTestata.ok && resPagamento.ok) {
             s.style.display = "inline";
-            setTimeout(function() { window.location.reload(); }, 1000);
+            setTimeout(function() { window.location.reload(); }, 800);
         } else {
             alert("Si è verificato un errore durante il salvataggio.");
             btn.disabled = false;
