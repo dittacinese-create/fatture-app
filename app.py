@@ -1165,8 +1165,16 @@ def dashboard():
         filtro_cliente = request.args.get('cliente', '').strip()
         filtro_stato = request.args.get('stato_pagamento', '').strip()
 
-    # --- QUERY CON INTERPRETAZIONE FORMATO DATA GG/MM/AAAA ---
-    # Usiamo TO_DATE per convertire le stringhe 'DD/MM/YYYY' memorizzate nel database in date reali confrontabili
+    # Convertiamo i filtri in oggetti date di Python per il confronto sicuro
+    try:
+        date_inizio_filtro = datetime.strptime(filtro_inizio, "%Y-%m-%d").date()
+        date_fine_filtro = datetime.strptime(filtro_fine, "%Y-%m-%d").date()
+    except Exception:
+        date_inizio_filtro = datetime(2026, 1, 1).date()
+        date_fine_filtro = datetime(2026, 12, 31).date()
+
+    # --- QUERY COMPLETA ---
+    # Selezioniamo tutte le fatture e filtriamo in modo sicuro in Python per evitare crash del database
     query = """
         SELECT f.*, 
                COALESCE(c.nome, f.cliente) as cliente_nome
@@ -1176,12 +1184,6 @@ def dashboard():
     """
     params = []
 
-    if filtro_inizio:
-        query += " AND TO_DATE(f.data_fattura, 'DD/MM/YYYY') >= TO_DATE(%s, 'YYYY-MM-DD')"
-        params.append(filtro_inizio)
-    if filtro_fine:
-        query += " AND TO_DATE(f.data_fattura, 'DD/MM/YYYY') <= TO_DATE(%s, 'YYYY-MM-DD')"
-        params.append(filtro_fine)
     if filtro_tipo:
         query += " AND UPPER(f.tipologia) = UPPER(%s)"
         params.append(filtro_tipo)
@@ -1189,7 +1191,6 @@ def dashboard():
         query += " AND (COALESCE(c.nome, f.cliente) ILIKE %s)"
         params.append(f"%{filtro_cliente}%")
     if filtro_stato:
-        # Uniformiamo il controllo dello stato di pagamento per includere variazioni di genere (Pagato/Pagata)
         if filtro_stato.lower() in ['pagato', 'pagata']:
             query += " AND f.stato_pagamento ILIKE 'pagat%'"
         elif filtro_stato.lower() in ['non pagato', 'non pagata']:
@@ -1200,15 +1201,39 @@ def dashboard():
 
     query += " ORDER BY f.id ASC"
 
+    fatture_filtrate = []
+    totale_generale = 0.0
+    totale_pagato = 0.0
+    totale_mancante = 0.0
+
     try:
         cur.execute(query, tuple(params))
-        fatture = cur.fetchall()
-        
-        totale_generale = 0.0
-        totale_pagato = 0.0
-        totale_mancante = 0.0
-        
-        for f in fatture:
+        tutte_le_fatture = cur.fetchall()
+
+        for f in tutte_le_fatture:
+            # 1. Parsing sicuro della data della fattura dal database (formato 'DD/MM/YYYY')
+            data_str = str(f.get('data_fattura') or '').strip()
+            data_valida = None
+            
+            for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+                try:
+                    data_valida = datetime.strptime(data_str, fmt).date()
+                    break
+                except ValueError:
+                    continue
+
+            # Se la data è mancante o invalida, saltiamo o non la includiamo nel filtro temporale
+            if not data_valida:
+                continue
+
+            # 2. Applichiamo il filtro sulle date
+            if data_valida < date_inizio_filtro or data_valida > date_fine_filtro:
+                continue
+
+            # La fattura supera tutti i controlli: la aggiungiamo alla lista finale
+            fatture_filtrate.append(f)
+
+            # 3. Calcolo dei totali
             importo_val = f.get('importo_totale') or f.get('importo') or f.get('totale') or 0
             if isinstance(importo_val, str):
                 try:
@@ -1236,8 +1261,8 @@ def dashboard():
 
     except Exception as e:
         db.rollback()
-        print(f"Errore query dashboard: {e}")
-        fatture = []
+        print(f"Errore caricamento e filtro dati: {e}")
+        fatture_filtrate = []
         totale_generale = 0.0
         totale_pagato = 0.0
         totale_mancante = 0.0
@@ -1246,7 +1271,7 @@ def dashboard():
         
     return render_template(
         "dashboard.html", 
-        fatture=fatture,
+        fatture=fatture_filtrate,
         totale_generale=totale_generale,
         totale_pagato=totale_pagato,
         totale_mancante=totale_mancante,
