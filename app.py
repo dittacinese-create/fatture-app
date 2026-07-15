@@ -208,9 +208,22 @@ def vedi_fattura(fattura_id):
     fattura_dict = dict(f)
     if "regime_iva" not in fattura_dict: fattura_dict["regime_iva"] = "22"
     if "banca_id" not in fattura_dict: fattura_dict["banca_id"] = "BPER"
+    
+    # Integrazione campi mancanti richiesti dai calcoli dell'HTML
+    if "totale_pagamento" not in fattura_dict: fattura_dict["totale_pagamento"] = 0.0
+    if "totale_pagato" not in fattura_dict:
+        fattura_dict["totale_pagato"] = fattura_dict["totale"] if fattura_dict.get("stato_pagamento") == "Pagata" else 0.0
+
+    valore_totale = fattura_dict.get("totale", 0.0)
         
-    # Sostituito f=fattura_dict con fattura=fattura_dict per allinearsi all'HTML
-    return render_template("fattura_dettaglio.html", fattura=fattura_dict, cliente=cliente, righe=righe)
+    # Passiamo sia 'fattura', sia la variabile isolata 'totale' richiesta a riga 110
+    return render_template(
+        "fattura_dettaglio.html", 
+        fattura=fattura_dict, 
+        cliente=cliente, 
+        righe=righe, 
+        totale=valore_totale
+    )
 
 
 @app.route("/delete_fattura/<int:fattura_id>")
