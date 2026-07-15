@@ -566,6 +566,87 @@ def delete_riga_ddt(riga_id, fattura_id):
 
 # --- ALTRE ROTTE DI STATO ---
 
+@app.route("/pdf/<int:fattura_id>")
+def genera_pdf(fattura_id):
+    from flask import Response, render_template
+    
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    
+    # 1. Recupera la fattura
+    cur.execute("SELECT * FROM fatture WHERE id = %s", (fattura_id,))
+    f = cur.fetchone()
+    
+    if not f:
+        cur.close()
+        flash("Fattura non trovata.", "danger")
+        return redirect(url_for("fatture"))
+        
+    # 2. Recupera i dati del cliente collegato
+    cliente = None
+    if f["cliente_id"]:
+        cur.execute("SELECT * FROM clienti WHERE id = %s", (f["cliente_id"],))
+        cliente = cur.fetchone()
+        
+    # 3. Recupera le righe (in base al tipo: FORNITURA dai DDT o MANUALE dalle righe_fattura)
+    righe = []
+    if f["tipo"] == "FORNITURA":
+        cur.execute("""
+            SELECT rd.* FROM righe_ddt rd
+            JOIN ddt d ON rd.ddt_id = d.id
+            WHERE d.fattura_id = %s ORDER BY d.data ASC, rd.id ASC
+        """, (fattura_id,))
+        righe_raw = cur.fetchall()
+        for r in righe_raw:
+            d = dict(r)
+            d["totale"] = d["quantita"] * d["prezzo"]
+            righe.append(d)
+    else:
+        cur.execute("SELECT * FROM righe_fattura WHERE fattura_id = %s ORDER BY id ASC", (fattura_id,))
+        righe_raw = cur.fetchall()
+        for r in righe_raw:
+            d = dict(r)
+            # Gestisce la discrepanza sul nome della colonna prezzo_unitario / prezzo
+            d["prezzo"] = d.get("prezzo_unitario", d.get("prezzo", 0.0))
+            d["totale"] = d["quantita"] * d["prezzo"]
+            righe.append(d)
+            
+    cur.close()
+
+    # 4. Calcoli economici per il layout del PDF
+    valore_totale = f.get("totale", 0.0) or 0.0
+    try:
+        aliquota = float(f["regime_iva"])
+    except:
+        aliquota = 22.0
+        
+    valore_imponibile = valore_totale / (1 + (aliquota / 100.0))
+    valore_iva = valore_totale - valore_imponibile
+
+    # 5. Generazione del file HTML e compilazione in PDF (usa WeasyPrint)
+    try:
+        import weasyprint
+        html_content = render_template(
+            "fattura_pdf_template.html",  # o il nome esatto del tuo file .html per il PDF
+            fattura=dict(f),
+            cliente=cliente,
+            righe=righe,
+            imponibile=valore_imponibile,
+            iva=valore_iva,
+            totale=valore_totale
+        )
+        pdf_bin = weasyprint.HTML(string=html_content).write_pdf()
+        
+        return Response(
+            pdf_bin,
+            mimetype="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename=Fattura_{f['numero']}.pdf"}
+        )
+    except Exception as e:
+        print(f"Errore WeasyPrint: {e}")
+        flash("Errore interno durante la generazione del PDF.", "danger")
+        return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
+
 @app.route("/chiudi_fattura/<int:fattura_id>")
 def chiudi_fattura(fattura_id):
     db = get_db()
@@ -647,32 +728,6 @@ def modifica_cliente(cliente_id):
     
     # Ritorno di sicurezza per i form standard
     return jsonify({"success": True})
-
-
-# --- ROTTA GENERAZIONE PDF SENZA VINCOLI DI STATO ---
-@app.route("/pdf/<int:fattura_id>")
-def genera_pdf(fattura_id):
-    # Se usi WeasyPrint o moduli HTML-to-PDF integrati, questa struttura elabora il documento a prescindere dallo stato
-    db = get_db()
-    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    cur.execute("SELECT * FROM fatture WHERE id = %s", (fattura_id,))
-    f = cur.fetchone()
-    cur.close()
-    
-    if not f:
-        flash("Fattura non trovata.", "danger")
-        return redirect(url_for("fatture"))
-        
-    # Inserisci qui il richiamo alla libreria PDF che usi (es. WeasyPrint o ReportLab)
-    # Esempio indicativo con WeasyPrint (adattalo se usi un motore differente):
-    # html = render_template("fattura_pdf_template.html", fattura=f)
-    # pdf = weasyprint.HTML(string=html).write_pdf()
-    # return Response(pdf, mimetype="application/pdf", headers={"Content-Disposition": f"attachment; filename=Fattura_{f['numero']}.pdf"})
-    
-    # Al momento restituisce una conferma per debug se la logica interna varia
-    flash(f"Download avviato per la fattura numero {f['numero']}", "success")
-    return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
-
 
 @app.route("/delete_cliente/<int:cliente_id>")
 def delete_cliente(cliente_id):
