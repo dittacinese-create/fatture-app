@@ -5,6 +5,55 @@
     <h1>Dashboard Generale</h1>
 </div>
 
+<!-- BARRA DEI FILTRI -->
+<div class="card" style="background: #fff; padding: 15px; border: 1px solid #cbd5e1; border-radius: 6px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+    <form method="GET" action="{{ url_for('dashboard') }}" style="display: flex; flex-wrap: wrap; gap: 15px; align-items: flex-end;">
+        
+        <!-- Filtro Periodo -->
+        <div style="display: flex; flex-direction: column; gap: 5px;">
+            <label style="font-size: 12px; font-weight: bold; color: #475569;">Dal:</label>
+            <input type="date" name="inizio" value="{{ filtro_inizio }}" style="padding: 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;">
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 5px;">
+            <label style="font-size: 12px; font-weight: bold; color: #475569;">Al:</label>
+            <input type="date" name="fine" value="{{ filtro_fine }}" style="padding: 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;">
+        </div>
+
+        <!-- Filtro Cliente -->
+        <div style="display: flex; flex-direction: column; gap: 5px; flex-grow: 1; min-width: 150px;">
+            <label style="font-size: 12px; font-weight: bold; color: #475569;">Cerca Cliente:</label>
+            <input type="text" name="cliente" value="{{ filtro_cliente }}" placeholder="Nome cliente..." style="padding: 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;">
+        </div>
+
+        <!-- Filtro Tipologia -->
+        <div style="display: flex; flex-direction: column; gap: 5px; width: 140px;">
+            <label style="font-size: 12px; font-weight: bold; color: #475569;">Tipologia:</label>
+            <select name="tipo" style="padding: 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;">
+                <option value="">Tutte</option>
+                <option value="MANUALE" {% if filtro_tipo == 'MANUALE' %}selected{% endif %}>Manuale</option>
+                <option value="FORNITURA" {% if filtro_tipo == 'FORNITURA' %}selected{% endif %}>Fornitura</option>
+            </select>
+        </div>
+
+        <!-- Filtro Stato Pagamento -->
+        <div style="display: flex; flex-direction: column; gap: 5px; width: 140px;">
+            <label style="font-size: 12px; font-weight: bold; color: #475569;">Stato Pagamento:</label>
+            <select name="stato_pagamento" style="padding: 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;">
+                <option value="">Tutti</option>
+                <option value="Pagato" {% if filtro_stato == 'Pagato' %}selected{% endif %}>Pagato</option>
+                <option value="Parziale" {% if filtro_stato == 'Parziale' %}selected{% endif %}>Parziale</option>
+                <option value="Non Pagato" {% if filtro_stato == 'Non Pagato' %}selected{% endif %}>Non Pagato</option>
+            </select>
+        </div>
+
+        <!-- Pulsanti Azione -->
+        <div style="display: flex; gap: 10px;">
+            <button type="submit" style="background-color: #2563eb; color: white; border: none; padding: 7px 15px; border-radius: 4px; font-size: 13px; cursor: pointer; font-weight: bold;">Filtra</button>
+            <a href="{{ url_for('dashboard') }}" style="background-color: #e2e8f0; color: #475569; padding: 7px 15px; border-radius: 4px; font-size: 13px; text-decoration: none; font-weight: bold; text-align: center;">Azzera</a>
+        </div>
+    </form>
+</div>
+
 <!-- SEZIONE CONTATORI TOTALI -->
 <div class="kpi-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-bottom: 25px;">
     
@@ -31,7 +80,7 @@
 
 </div>
 
-<!-- SEZIONE TABELLA STILE FOGLIO GOOGLE -->
+<!-- TABELLA DATI -->
 <div class="card" style="padding: 0; overflow-x: auto; border: 1px solid #cbd5e1; border-radius: 4px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
     <table class="tabella-sheets" style="width: 100%; border-collapse: collapse; font-family: Arial, sans-serif; font-size: 13px; color: #1c1c1c;">
         <thead>
@@ -42,7 +91,7 @@
                 <th style="border: 1px solid #cbd5e1; padding: 8px 10px; font-weight: bold; width: 110px; text-align: center;">Scadenza</th>
                 <th style="border: 1px solid #cbd5e1; padding: 8px 10px; font-weight: bold; text-align: right; width: 130px;">Importo Totale (€)</th>
                 <th style="border: 1px solid #cbd5e1; padding: 8px 10px; font-weight: bold; min-width: 150px;">Note / Cantiere</th>
-                <th style="border: 1px solid #cbd5e1; padding: 8px 10px; font-weight: bold; width: 100px; text-align: center;">Stato</th>
+                <th style="border: 1px solid #cbd5e1; padding: 8px 10px; font-weight: bold; width: 120px; text-align: center;">Stato Pagamento</th>
                 <th style="border: 1px solid #cbd5e1; padding: 8px 10px; font-weight: bold; width: 120px; text-align: center; border-right: none;">Data Pagamento</th>
             </tr>
         </thead>
@@ -56,7 +105,7 @@
                 
                 <!-- Cliente -->
                 <td style="border: 1px solid #cbd5e1; padding: 6px 10px;">
-                    {{ f.cliente or f.nome_cliente or '' }}
+                    {{ f.cliente_nome or 'Cliente Generico' }}
                 </td>
                 
                 <!-- Data Fattura -->
@@ -84,12 +133,16 @@
                     {{ f.note or f.cantiere or '' }}
                 </td>
                 
-                <!-- Stato -->
+                <!-- Stato Pagamento con Colori Personalizzati -->
                 <td style="border: 1px solid #cbd5e1; padding: 6px 10px; font-weight: bold; text-align: center;">
-                    {% set stato_str = (f.stato or '') | lower %}
-                    <span style="{% if stato_str == 'pagato' %}color: #16a34a;{% else %}color: #dc2626;{% endif %}">
-                        {{ f.stato or 'In Attesa' }}
-                    </span>
+                    {% set stato_pag = (f.stato_pagamento or 'Non Pagato') | lower %}
+                    {% if stato_pag == 'pagato' %}
+                        <span style="background-color: #dcfce7; color: #16a34a; padding: 3px 8px; border-radius: 4px; display: inline-block; font-size: 11px;">PAGATO</span>
+                    {% elif stato_pag in ['parziale', 'parzialmente pagato'] %}
+                        <span style="background-color: #fef3c7; color: #d97706; padding: 3px 8px; border-radius: 4px; display: inline-block; font-size: 11px;">PARZIALE</span>
+                    {% else %}
+                        <span style="background-color: #fee2e2; color: #dc2626; padding: 3px 8px; border-radius: 4px; display: inline-block; font-size: 11px;">NON PAGATO</span>
+                    {% endif %}
                 </td>
                 
                 <!-- Data Pagamento -->
@@ -100,7 +153,7 @@
             {% else %}
             <tr>
                 <td colspan="8" style="padding: 20px; text-align: center; color: #94a3b8;">
-                    Nessuna fattura presente nel database.
+                    Nessuna fattura corrisponde ai filtri selezionati.
                 </td>
             </tr>
             {% endfor %}

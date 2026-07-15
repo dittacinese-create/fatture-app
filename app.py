@@ -1127,27 +1127,72 @@ def dashboard():
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
+    # --- AGGIORNAMENTO AUTOMATICO VINCOLO DI CONTROLLO DATABASE ---
     try:
-        # 1. Recuperiamo tutte le fatture per la tabella
-        # Usiamo COALESCE e controlli flessibili sui nomi dei campi per essere sicuri che vengano letti
+        # Rimuoviamo il vecchio vincolo restrittivo e ne creiamo uno che include 'Parziale'
         cur.execute("""
-            SELECT * FROM fatture 
-            ORDER BY id ASC
+            ALTER TABLE fatture DROP CONSTRAINT IF EXISTS fatture_stato_pagamento_check;
         """)
+        cur.execute("""
+            ALTER TABLE fatture ADD CONSTRAINT fatture_stato_pagamento_check 
+            CHECK (stato_pagamento IN ('Pagato', 'Non Pagato', 'Parziale', 'Parzialmente Pagato'));
+        """)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"Nota: Rimozione/Creazione vincolo stato_pagamento: {e}")
+
+    # --- RECUPERO PARAMETRI DI FILTRO ---
+    filtro_inizio = request.args.get('inizio', '').strip()
+    filtro_fine = request.args.get('fine', '').strip()
+    filtro_tipo = request.args.get('tipo', '').strip()
+    filtro_cliente = request.args.get('cliente', '').strip()
+    filtro_stato = request.args.get('stato_pagamento', '').strip()
+
+    # --- COSTRUZIONE QUERY CON FILTRI ---
+    # Usiamo un LEFT JOIN con la tabella clienti se presente, altrimenti ricadiamo sul campo testo della fattura
+    query = """
+        SELECT f.*, 
+               COALESCE(c.nome, f.cliente) as cliente_nome
+        FROM fatture f
+        LEFT JOIN clienti c ON f.cliente_id = c.id
+        WHERE 1=1
+    """
+    params = []
+
+    if filtro_inizio:
+        query += " AND f.data_fattura >= %s"
+        params.append(filtro_inizio)
+    if filtro_fine:
+        query += " AND f.data_fattura <= %s"
+        params.append(filtro_fine)
+    if filtro_tipo:
+        query += " AND UPPER(f.tipologia) = UPPER(%s)"
+        params.append(filtro_tipo)
+    if filtro_cliente:
+        query += " AND (COALESCE(c.nome, f.cliente) ILIKE %s)"
+        params.append(f"%{filtro_cliente}%")
+    if filtro_stato:
+        query += " AND f.stato_pagamento = %s"
+        params.append(filtro_stato)
+
+    query += " ORDER BY f.id ASC"
+
+    try:
+        cur.execute(query, tuple(params))
         fatture = cur.fetchall()
         
-        # 2. Inizializziamo i contatori per i totali
+        # Inizializzazione totalizzatori
         totale_generale = 0.0
         totale_pagato = 0.0
         totale_mancante = 0.0
         
-        # 3. Calcoliamo i totali ciclando sulle fatture in modo sicuro da Python
+        # Calcolo dei totali
         for f in fatture:
-            # Identifica l'importo (gestisce sia stringhe con la virgola che float/numeric)
+            # Calcolo importo in modo sicuro
             importo_val = f.get('importo_totale') or f.get('importo') or f.get('totale') or 0
             if isinstance(importo_val, str):
                 try:
-                    # Rimuove punti delle migliaia e converte la virgola in punto decimale
                     importo_val = float(importo_val.replace('.', '').replace(',', '.'))
                 except ValueError:
                     importo_val = 0.0
@@ -1156,11 +1201,22 @@ def dashboard():
                 
             totale_generale += importo_val
             
-            # Identifica lo stato di pagamento
-            stato_val = str(f.get('stato') or '').strip().lower()
-            if stato_val == 'pagato':
+            # Leggiamo lo stato di pagamento (Pagato, Non Pagato, Parziale)
+            stato_pag = str(f.get('stato_pagamento') or '').strip().lower()
+            
+            if stato_pag == 'pagato':
                 totale_pagato += importo_val
+            elif stato_pag in ['parziale', 'parzialmente pagato']:
+                # Se è parziale, proviamo a usare la colonna del totale già pagato se esiste
+                gia_pagato = f.get('totale_pagato') or f.get('importo_pagato') or 0
+                try:
+                    gia_pagato_float = float(gia_pagato)
+                except (ValueError, TypeError):
+                    gia_pagato_float = 0.0
+                totale_pagato += gia_pagato_float
+                totale_mancante += max(0.0, importo_val - gia_pagato_float)
             else:
+                # 'non pagato' o null
                 totale_mancante += importo_val
 
     except Exception as e:
@@ -1178,7 +1234,12 @@ def dashboard():
         fatture=fatture,
         totale_generale=totale_generale,
         totale_pagato=totale_pagato,
-        totale_mancante=totale_mancante
+        totale_mancante=totale_mancante,
+        filtro_inizio=filtro_inizio,
+        filtro_fine=filtro_fine,
+        filtro_tipo=filtro_tipo,
+        filtro_cliente=filtro_cliente,
+        filtro_stato=filtro_stato
     )
 
 # ==============================================================================
