@@ -8,8 +8,8 @@
 
     /* TITOLO */
     table.titolo { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
-    table.titolo td.tit { font-size: 14pt; font-weight: bold; letter-spacing: 0.5px; }
-    table.titolo td.num { text-align: right; font-size: 9pt; color: #555; }
+    table.titolo td.tit { font-size: 14pt; font-weight: bold; letter-spacing: 0.5px; color: #1d4d3e; }
+    table.titolo td.num { text-align: right; font-size: 11pt; font-weight: bold; color: #1d4d3e; }
 
     /* CEDENTE / CESSIONARIO */
     table.parti { width: 100%; border-collapse: collapse; border-top: 1px solid #000; border-bottom: 1px solid #000; margin-bottom: 12px; }
@@ -24,7 +24,7 @@
     /* TABELLA RIGHE */
     table.righe { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
     table.righe thead tr { border-bottom: 1px solid #000; }
-    table.righe thead td { padding: 5px 8px 4px; font-size: 7.5pt; font-weight: bold; }
+    table.righe thead td { padding: 5px 8px 4px; font-size: 7.5pt; font-weight: bold; color: #1d4d3e; }
     table.righe thead td.right { text-align: right; }
     table.righe tbody td { padding: 5px 8px; border-bottom: 1px solid #eee; }
     table.righe tbody td.right { text-align: right; }
@@ -167,9 +167,8 @@
 <!-- PAGAMENTO -->
 <div class="pagamento">
     <b>Dati di pagamento</b><br>
-    Stato pagamento: {{ fattura.stato_pagamento }}<br>
     {% if banca_selezionata %}
-        <b>Coordinate Bancarie:</b> {{ banca_selezionata }}
+        {{ banca_selezionata }}
     {% else %}
         <em>Nessun dettaglio bancario inserito o richiesto.</em>
     {% endif %}
