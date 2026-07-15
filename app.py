@@ -611,6 +611,55 @@ def clienti():
     cur.close()
     return render_template("clienti.html", clienti=elenco_clienti)
 
+@app.route("/modifica_cliente/<int:cliente_id>", methods=["POST"])
+def modifica_cliente(cliente_id):
+    db = get_db()
+    cur = db.cursor()
+    
+    if request.is_json:
+        data = request.get_json()
+        nome = data.get("nome")
+        indirizzo = data.get("indirizzo")
+        partita_iva = data.get("partita_iva")
+        codice_fiscale = data.get("codice_fiscale")
+        codice_sdi = data.get("codice_sdi")
+        pec = data.get("pec")
+    else:
+        nome = request.form.get("nome")
+        indirizzo = request.form.get("indirizzo")
+        partita_iva = request.form.get("partita_iva")
+        codice_fiscale = request.form.get("codice_fiscale")
+        codice_sdi = request.form.get("codice_sdi")
+        pec = request.form.get("pec")
+
+    cur.execute("""
+        UPDATE clienti 
+        SET nome=%s, indirizzo=%s, partita_iva=%s, codice_fiscale=%s, codice_sdi=%s, pec=%s 
+        WHERE id=%s
+    """, (nome, indirizzo, partita_iva, codice_fiscale, codice_sdi, pec, cliente_id))
+    
+    db.commit()
+    cur.close()
+    
+    if request.is_json:
+        return jsonify({"success": True})
+    flash("Cliente modificato con successo.", "success")
+    return redirect(url_for("clienti"))
+
+
+@app.route("/delete_cliente/<int:cliente_id>")
+def delete_cliente(cliente_id):
+    db = get_db()
+    cur = db.cursor()
+    
+    # Rimuovendo un cliente, le sue fatture collegate non verranno eliminate 
+    # grazie alla regola ON DELETE SET NULL definita sulla tabella fatture.
+    cur.execute("DELETE FROM clienti WHERE id = %s", (cliente_id,))
+    db.commit()
+    cur.close()
+    
+    flash("Cliente eliminato con successo.", "success")
+    return redirect(url_for("clienti"))
 
 # --- SEZIONE PRODOTTI ---
 @app.route("/prodotti", methods=["GET", "POST"])

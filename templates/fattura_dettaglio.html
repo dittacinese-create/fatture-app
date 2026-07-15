@@ -4,9 +4,8 @@
 <div class="topbar">
     <h1>Fattura {{ fattura.numero }}</h1>
     <div class="flex gap-1">
-        {% if fattura.stato == "CHIUSA" %}
+        <!-- Rimosso il controllo sullo stato CHIUSA per permettere sempre il download -->
         <a href="/pdf/{{ fattura.id }}" class="btn btn-primary">⬇ Scarica PDF</a>
-        {% endif %}
         <a href="/fatture" class="btn">← Indietro</a>
     </div>
 </div>
