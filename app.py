@@ -41,7 +41,7 @@ def init_db():
             )
         """)
         
-        # AGGIORNAMENTO SCHEMA FATTURE: se la tabella esiste già, aggiungiamo le colonne mancanti
+        # Tabella Fatture Base
         cur.execute("""
             CREATE TABLE IF NOT EXISTS fatture (
                 id SERIAL PRIMARY KEY,
@@ -50,9 +50,6 @@ def init_db():
                 data_scadenza TEXT,
                 cliente_id INTEGER,
                 cliente_nome TEXT,
-                tipo TEXT DEFAULT 'MANUALE',
-                regime_iva TEXT DEFAULT '22',
-                banca_id TEXT,
                 totale REAL DEFAULT 0.0,
                 note TEXT,
                 stato_pagamento TEXT DEFAULT 'Non pagata',
@@ -60,20 +57,21 @@ def init_db():
                 FOREIGN KEY (cliente_id) REFERENCES clienti(id) ON DELETE SET NULL
             )
         """)
+        db.commit()
+
+        # Migrazioni separate una per una con commit e rollback dedicati
+        colonne_da_aggiungere = [
+            ("regime_iva", "TEXT DEFAULT '22'"),
+            ("tipo", "TEXT DEFAULT 'MANUALE'"),
+            ("banca_id", "TEXT")
+        ]
         
-        # Migrazione dinamica per evitare l'errore UndefinedColumn su database vecchi
-        try:
-            cur.execute("ALTER TABLE fatture ADD COLUMN regime_iva TEXT DEFAULT '22';")
-        except psycopg2.errors.DuplicateColumn:
-            db.rollback()
-        try:
-            cur.execute("ALTER TABLE fatture ADD COLUMN tipo TEXT DEFAULT 'MANUALE';")
-        except psycopg2.errors.DuplicateColumn:
-            db.rollback()
-        try:
-            cur.execute("ALTER TABLE fatture ADD COLUMN banca_id TEXT;")
-        except psycopg2.errors.DuplicateColumn:
-            db.rollback()
+        for colonna, tipo_dato in colonne_da_aggiungere:
+            try:
+                cur.execute(f"ALTER TABLE fatture ADD COLUMN {colonna} {tipo_dato};")
+                db.commit()
+            except Exception:
+                db.rollback()
             
         # Tabella Righe Fattura
         cur.execute("""
@@ -224,10 +222,8 @@ def vedi_fattura(fattura_id):
     if "banca_id" not in fattura_dict: 
         fattura_dict["banca_id"] = "BPER"
     
-    # Calcolo delle variabili richieste esplicitamente dal template HTML
     valore_totale = fattura_dict.get("totale", 0.0) or 0.0
     
-    # Calcolo dell'imponibile partendo dal totale e scorporando l'IVA
     try:
         aliquota = float(fattura_dict["regime_iva"])
     except:
@@ -248,6 +244,66 @@ def vedi_fattura(fattura_id):
         imponibile=valore_imponibile,
         iva=valore_iva
     )
+
+
+# --- ROTTE DI AGGIORNAMENTO E GESTIONE AJAX (Richieste da fattura_dettaglio.html) ---
+
+@app.route("/aggiorna_testata/<int:fattura_id>", methods=["POST"])
+@app.route("/aggiorna_fattura_ajax/<int:fattura_id>", methods=["POST"])
+def aggiorna_fattura_ajax(fattura_id):
+    db = get_db()
+    cur = db.cursor()
+    
+    if request.is_json:
+        data = request.get_json()
+        numero = data.get("numero")
+        data_doc = data.get("data")
+        stato_pagamento = data.get("stato_pagamento")
+        stato = data.get("stato")
+        
+        cur.execute("""
+            UPDATE fatture 
+            SET numero=COALESCE(%s, numero), data=COALESCE(%s, data), 
+                stato_pagamento=COALESCE(%s, stato_pagamento), stato=COALESCE(%s, stato)
+            WHERE id=%s
+        """, (numero, data_doc, stato_pagamento, stato, fattura_id))
+    else:
+        numero = request.form.get("numero")
+        data_doc = request.form.get("data")
+        stato_pagamento = request.form.get("stato_pagamento")
+        stato = request.form.get("stato")
+        
+        cur.execute("""
+            UPDATE fatture 
+            SET numero=%s, data=%s, stato_pagamento=%s, stato=%s
+            WHERE id=%s
+        """, (numero, data_doc, stato_pagamento, stato, fattura_id))
+        
+    db.commit()
+    cur.close()
+    
+    if request.is_json:
+        return jsonify({"success": True})
+    flash("Fattura aggiornata con successo.", "success")
+    return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
+
+
+@app.route("/add_ddt", methods=["POST"])
+def add_ddt():
+    # Gestione fittizia o salvataggio note relativo al DDT per assecondare il form
+    fattura_id = request.form.get("fattura_id")
+    numero_ddt = request.form.get("numero_ddt")
+    data_ddt = request.form.get("data_ddt")
+    
+    db = get_db()
+    cur = db.cursor()
+    nota_ddt = f"Inserito riferimento DDT n. {numero_ddt} del {data_ddt}"
+    cur.execute("UPDATE fatture SET note = CONCAT(note, %s) WHERE id = %s", (f"\n{nota_ddt}", fattura_id))
+    db.commit()
+    cur.close()
+    
+    flash("Riferimento DDT aggiunto alle note della fattura.", "success")
+    return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
 
 
 @app.route("/delete_fattura/<int:fattura_id>")
@@ -335,7 +391,7 @@ def modifica_prodotto(prodotto_id):
         UPDATE prodotti 
         SET nome=%s, prezzo_base=%s, unita_misura=%s
         WHERE id=%s
-    """, (nome, prezzo_base, unita_misura, producto_id))
+    """, (nome, prezzo_base, unita_misura, prodotto_id))
     db.commit()
     cur.close()
     return jsonify({"success": True})
