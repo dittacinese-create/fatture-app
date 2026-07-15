@@ -200,18 +200,17 @@ def vedi_fattura(fattura_id):
         cur.execute("SELECT * FROM clienti WHERE id = %s", (f["cliente_id"],))
         cliente = cur.fetchone()
     
-    # Recuperiamo anche le eventuali righe/articoli collegate per il template
     cur.execute("SELECT * FROM righe_fattura WHERE fattura_id = %s", (fattura_id,))
     righe = cur.fetchall()
         
     cur.close()
     
-    # Dizionario di fallback protetto da errori jinja2
     fattura_dict = dict(f)
     if "regime_iva" not in fattura_dict: fattura_dict["regime_iva"] = "22"
     if "banca_id" not in fattura_dict: fattura_dict["banca_id"] = "BPER"
         
-    return render_template("fattura_dettaglio.html", f=fattura_dict, cliente=cliente, righe=righe)
+    # Sostituito f=fattura_dict con fattura=fattura_dict per allinearsi all'HTML
+    return render_template("fattura_dettaglio.html", fattura=fattura_dict, cliente=cliente, righe=righe)
 
 
 @app.route("/delete_fattura/<int:fattura_id>")
