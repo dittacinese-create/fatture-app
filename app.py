@@ -504,29 +504,44 @@ def delete_riga_fattura(riga_id, fattura_id):
 
 
 # ==============================================================================
-# 5. GESTIONE DDT & RIGHE DDT (TIPO FORNITURA)
+# 5. GESTIONE DDT & RIGHE DDT (TIPO FORNITURA) - CORRETTO
 # ==============================================================================
 
 @app.route("/add_ddt", methods=["POST"])
 def add_ddt():
     fattura_id = request.form.get("fattura_id")
-    db = get_db()
-    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    
-    # Blocco sicurezza
-    cur.execute("SELECT stato FROM fatture WHERE id = %s", (fattura_id,))
-    f = cur.fetchone()
-    if f and f["stato"] == "CHIUSA":
-        cur.close()
-        flash("Impossibile aggiungere DDT a una fattura CHIUSA.", "danger")
-        return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
-        
     numero = request.form.get("numero")
     data = request.form.get("data")
     
-    cur.execute("INSERT INTO ddt (fattura_id, numero, data) VALUES (%s, %s, %s)", (fattura_id, numero, data))
-    db.commit()
-    cur.close()
+    if not fattura_id:
+        flash("ID Fattura mancante.", "danger")
+        return redirect(url_for("index"))
+
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    try:
+        # Blocco sicurezza
+        cur.execute("SELECT stato FROM fatture WHERE id = %s", (fattura_id,))
+        f = cur.fetchone()
+        if not f:
+            flash("Fattura non trovata.", "danger")
+            return redirect(url_for("index"))
+            
+        if f["stato"] == "CHIUSA":
+            flash("Impossibile aggiungere DDT a una fattura CHIUSA.", "danger")
+            return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
+            
+        cur.execute(
+            "INSERT INTO ddt (fattura_id, numero, data) VALUES (%s, %s, %s)", 
+            (fattura_id, numero, data)
+        )
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        flash(f"Errore durante il salvataggio: {str(e)}", "danger")
+    finally:
+        cur.close()
+        
     return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
 
 
@@ -534,76 +549,101 @@ def add_ddt():
 def aggiorna_ddt(ddt_id):
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    
-    # Blocco sicurezza
-    cur.execute("SELECT fattura_id FROM ddt WHERE id = %s", (ddt_id,))
-    ddt_item = cur.fetchone()
-    if ddt_item:
+    try:
+        # Blocco sicurezza
+        cur.execute("SELECT fattura_id FROM ddt WHERE id = %s", (ddt_id,))
+        ddt_item = cur.fetchone()
+        if not ddt_item:
+            return jsonify({"success": False, "error": "DDT non trovato"}), 404
+            
         cur.execute("SELECT stato FROM fatture WHERE id = %s", (ddt_item["fattura_id"],))
         f = cur.fetchone()
         if f and f["stato"] == "CHIUSA":
-            cur.close()
             return jsonify({"success": False, "error": "Impossibile modificare DDT di una fattura CHIUSA"}), 403
-            
-    data = request.get_json()
-    cur.execute("UPDATE ddt SET numero = %s, data = %s WHERE id = %s", (data.get("numero"), data.get("data"), ddt_id))
-    db.commit()
-    cur.close()
-    return jsonify({"success": True})
+                
+        data = request.get_json() or {}
+        numero = data.get("numero")
+        data_ddt = data.get("data")
+        
+        cur.execute(
+            "UPDATE ddt SET numero = %s, data = %s WHERE id = %s", 
+            (numero, data_ddt, ddt_id)
+        )
+        db.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        db.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        cur.close()
 
 
 @app.route("/delete_ddt/<int:ddt_id>/<int:fattura_id>")
 def delete_ddt(ddt_id, fattura_id):
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    
-    # Blocco sicurezza
-    cur.execute("SELECT stato FROM fatture WHERE id = %s", (fattura_id,))
-    f = cur.fetchone()
-    if f and f["stato"] == "CHIUSA":
+    try:
+        # Blocco sicurezza
+        cur.execute("SELECT stato FROM fatture WHERE id = %s", (fattura_id,))
+        f = cur.fetchone()
+        if not f:
+            flash("Fattura non trovata.", "danger")
+            return redirect(url_for("index"))
+            
+        if f["stato"] == "CHIUSA":
+            flash("Impossibile eliminare DDT da una fattura CHIUSA.", "danger")
+            return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
+            
+        cur.execute("DELETE FROM ddt WHERE id = %s AND fattura_id = %s", (ddt_id, fattura_id))
+        ricalcola_totale_fattura(cur, fattura_id)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        flash(f"Errore durante l'eliminazione: {str(e)}", "danger")
+    finally:
         cur.close()
-        flash("Impossibile eliminare DDT da una fattura CHIUSA.", "danger")
-        return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
         
-    cur.execute("DELETE FROM ddt WHERE id = %s AND fattura_id = %s", (ddt_id, fattura_id))
-    ricalcola_totale_fattura(cur, fattura_id)
-    db.commit()
-    cur.close()
     return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
 
 
 @app.route("/add_riga_prodotto", methods=["POST"])
 def add_riga_prodotto():
     fattura_id = request.form.get("fattura_id")
-    db = get_db()
-    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    
-    # Blocco sicurezza
-    cur.execute("SELECT stato FROM fatture WHERE id = %s", (fattura_id,))
-    f = cur.fetchone()
-    if f and f["stato"] == "CHIUSA":
-        cur.close()
-        return jsonify({"success": False, "error": "Impossibile modificare una fattura CHIUSA"}), 403
-        
     ddt_id = request.form.get("ddt_id")
     prodotto_id = request.form.get("prodotto_id")
-    quantita = request.form.get("quantita", 1.0)
+    quantita_raw = request.form.get("quantita", 1.0)
     prezzo_override = request.form.get("prezzo_override")
-    
-    try:
-        quantita = float(quantita)
-    except:
-        quantita = 1.0
 
-    cur.execute("SELECT nome, prezzo_base, unita_misura FROM prodotti WHERE id = %s", (prodotto_id,))
-    p = cur.fetchone()
-    
-    if p:
+    if not fattura_id or not ddt_id or not prodotto_id:
+        return jsonify({"success": False, "error": "Dati obbligatori mancanti"}), 400
+
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    try:
+        # Blocco sicurezza
+        cur.execute("SELECT stato FROM fatture WHERE id = %s", (fattura_id,))
+        f = cur.fetchone()
+        if not f:
+            return jsonify({"success": False, "error": "Fattura non trovata"}), 404
+        if f["stato"] == "CHIUSA":
+            return jsonify({"success": False, "error": "Impossibile modificare una fattura CHIUSA"}), 403
+            
+        try:
+            quantita = float(quantita_raw)
+        except (ValueError, TypeError):
+            quantita = 1.0
+
+        cur.execute("SELECT nome, prezzo_base, unita_misura FROM prodotti WHERE id = %s", (prodotto_id,))
+        p = cur.fetchone()
+        
+        if not p:
+            return jsonify({"success": False, "error": "Prodotto non trovato"}), 404
+            
         descrizione = p["nome"]
         unita_misura = p["unita_misura"]
         try:
             prezzo = float(prezzo_override) if prezzo_override else float(p["prezzo_base"])
-        except:
+        except (ValueError, TypeError):
             prezzo = float(p["prezzo_base"])
             
         cur.execute("""
@@ -613,44 +653,61 @@ def add_riga_prodotto():
         
         ricalcola_totale_fattura(cur, fattura_id)
         db.commit()
+        return jsonify({"success": True})
         
-    cur.close()
-    return jsonify({"success": True})
+    except Exception as e:
+        db.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        cur.close()
 
 
 @app.route("/aggiorna_riga_ddt/<int:riga_id>", methods=["POST"])
 def aggiorna_riga_ddt(riga_id):
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    
-    # Blocco sicurezza
-    cur.execute("SELECT ddt_id FROM righe_ddt WHERE id = %s", (riga_id,))
-    riga_item = cur.fetchone()
-    if riga_item:
+    try:
+        # Blocco sicurezza
+        cur.execute("SELECT ddt_id FROM righe_ddt WHERE id = %s", (riga_id,))
+        riga_item = cur.fetchone()
+        if not riga_item:
+            return jsonify({"success": False, "error": "Riga DDT non trovata"}), 404
+            
         cur.execute("SELECT fattura_id FROM ddt WHERE id = %s", (riga_item["ddt_id"],))
         ddt_item = cur.fetchone()
-        if ddt_item:
-            cur.execute("SELECT stato FROM fatture WHERE id = %s", (ddt_item["fattura_id"],))
-            f = cur.fetchone()
-            if f and f["stato"] == "CHIUSA":
-                cur.close()
-                return jsonify({"success": False, "error": "Impossibile modificare prodotti di una fattura CHIUSA"}), 403
+        if not ddt_item:
+            return jsonify({"success": False, "error": "DDT associato non trovato"}), 404
+            
+        cur.execute("SELECT stato FROM fatture WHERE id = %s", (ddt_item["fattura_id"],))
+        f = cur.fetchone()
+        if f and f["stato"] == "CHIUSA":
+            return jsonify({"success": False, "error": "Impossibile modificare prodotti di una fattura CHIUSA"}), 403
 
-    data = request.get_json()
-    quantita = float(data.get("quantita", 1.0))
-    prezzo = float(data.get("prezzo", 0.0))
-    
-    cur.execute("UPDATE righe_ddt SET quantita = %s, prezzo = %s WHERE id = %s RETURNING ddt_id", (quantita, prezzo, riga_id))
-    ddt_id = cur.fetchone()["ddt_id"]
-    
-    cur.execute("SELECT fattura_id FROM ddt WHERE id = %s", (ddt_id,))
-    fattura_id = cur.fetchone()["fattura_id"]
-    
-    ricalcola_totale_fattura(cur, fattura_id)
-    db.commit()
-    cur.close()
-    return jsonify({"success": True})
-
+        data = request.get_json() or {}
+        try:
+            quantita = float(data.get("quantita", 1.0))
+            prezzo = float(data.get("prezzo", 0.0))
+        except (ValueError, TypeError):
+            return jsonify({"success": False, "error": "Formato quantita o prezzo non valido"}), 400
+        
+        cur.execute(
+            "UPDATE righe_ddt SET quantita = %s, prezzo = %s WHERE id = %s RETURNING ddt_id", 
+            (quantita, prezzo, riga_id)
+        )
+        ddt_id = cur.fetchone()["ddt_id"]
+        
+        cur.execute("SELECT fattura_id FROM ddt WHERE id = %s", (ddt_id,))
+        fattura_id = cur.fetchone()["fattura_id"]
+        
+        ricalcola_totale_fattura(cur, fattura_id)
+        db.commit()
+        return jsonify({"success": True})
+        
+    except Exception as e:
+        db.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        cur.close()
 
 @app.route("/delete_riga_ddt/<int:riga_id>/<int:fattura_id>")
 def delete_riga_ddt(riga_id, fattura_id):
