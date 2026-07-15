@@ -1127,9 +1127,8 @@ def dashboard():
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
-    # --- AGGIORNAMENTO AUTOMATICO VINCOLO DI CONTROLLO DATABASE ---
+    # --- AGGIORNAMENTO AUTOMATICO VINCOLO DI CONTROLLO ---
     try:
-        # Rimuoviamo il vecchio vincolo restrittivo e ne creiamo uno che include 'Parziale'
         cur.execute("""
             ALTER TABLE fatture DROP CONSTRAINT IF EXISTS fatture_stato_pagamento_check;
         """)
@@ -1140,17 +1139,25 @@ def dashboard():
         db.commit()
     except Exception as e:
         db.rollback()
-        print(f"Nota: Rimozione/Creazione vincolo stato_pagamento: {e}")
 
-    # --- RECUPERO PARAMETRI DI FILTRO ---
-    filtro_inizio = request.args.get('inizio', '').strip()
-    filtro_fine = request.args.get('fine', '').strip()
+    # --- IMPOSTAZIONE DEFAULT ANNO CORRENTE (2026) ---
+    anno_corrente = datetime.now().year # Sarà 2026
+    default_inizio = f"{anno_corrente}-01-01"
+    default_fine = f"{anno_corrente}-12-31"
+
+    filtro_inizio = request.args.get('inizio', default_inizio).strip()
+    filtro_fine = request.args.get('fine', default_fine).strip()
     filtro_tipo = request.args.get('tipo', '').strip()
     filtro_cliente = request.args.get('cliente', '').strip()
     filtro_stato = request.args.get('stato_pagamento', '').strip()
 
-    # --- COSTRUZIONE QUERY CON FILTRI ---
-    # Usiamo un LEFT JOIN con la tabella clienti se presente, altrimenti ricadiamo sul campo testo della fattura
+    # Se l'utente preme "Azzera", i parametri arrivano vuoti. Ripristiniamo il default temporale:
+    if not filtro_inizio and not request.args.get('azzera'):
+        filtro_inizio = default_inizio
+    if not filtro_fine and not request.args.get('azzera'):
+        filtro_fine = default_fine
+
+    # --- COSTRUZIONE QUERY ---
     query = """
         SELECT f.*, 
                COALESCE(c.nome, f.cliente) as cliente_nome
@@ -1182,14 +1189,11 @@ def dashboard():
         cur.execute(query, tuple(params))
         fatture = cur.fetchall()
         
-        # Inizializzazione totalizzatori
         totale_generale = 0.0
         totale_pagato = 0.0
         totale_mancante = 0.0
         
-        # Calcolo dei totali
         for f in fatture:
-            # Calcolo importo in modo sicuro
             importo_val = f.get('importo_totale') or f.get('importo') or f.get('totale') or 0
             if isinstance(importo_val, str):
                 try:
@@ -1201,13 +1205,11 @@ def dashboard():
                 
             totale_generale += importo_val
             
-            # Leggiamo lo stato di pagamento (Pagato, Non Pagato, Parziale)
             stato_pag = str(f.get('stato_pagamento') or '').strip().lower()
-            
             if stato_pag == 'pagato':
                 totale_pagato += importo_val
             elif stato_pag in ['parziale', 'parzialmente pagato']:
-                # Se è parziale, proviamo a usare la colonna del totale già pagato se esiste
+                # Se parziale, leggiamo l'importo pagato memorizzato, altrimenti andiamo in fallback
                 gia_pagato = f.get('totale_pagato') or f.get('importo_pagato') or 0
                 try:
                     gia_pagato_float = float(gia_pagato)
@@ -1216,12 +1218,11 @@ def dashboard():
                 totale_pagato += gia_pagato_float
                 totale_mancante += max(0.0, importo_val - gia_pagato_float)
             else:
-                # 'non pagato' o null
                 totale_mancante += importo_val
 
     except Exception as e:
         db.rollback()
-        print(f"Errore caricamento dati dashboard: {e}")
+        print(f"Errore dashboard: {e}")
         fatture = []
         totale_generale = 0.0
         totale_pagato = 0.0
