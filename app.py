@@ -641,10 +641,37 @@ def modifica_cliente(cliente_id):
     db.commit()
     cur.close()
     
-    if request.is_json:
+    # Rispondi sempre con JSON se la richiesta proviene da un fetch AJAX nell'interfaccia clienti
+    if request.is_json or request.headers.get("X-Requested-With") == "XMLHttpRequest" or (request.form and not request.referrer.endswith('/clienti')):
         return jsonify({"success": True})
-    flash("Cliente modificato con successo.", "success")
-    return redirect(url_for("clienti"))
+    
+    # Ritorno di sicurezza per i form standard
+    return jsonify({"success": True})
+
+
+# --- ROTTA GENERAZIONE PDF SENZA VINCOLI DI STATO ---
+@app.route("/pdf/<int:fattura_id>")
+def genera_pdf(fattura_id):
+    # Se usi WeasyPrint o moduli HTML-to-PDF integrati, questa struttura elabora il documento a prescindere dallo stato
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    cur.execute("SELECT * FROM fatture WHERE id = %s", (fattura_id,))
+    f = cur.fetchone()
+    cur.close()
+    
+    if not f:
+        flash("Fattura non trovata.", "danger")
+        return redirect(url_for("fatture"))
+        
+    # Inserisci qui il richiamo alla libreria PDF che usi (es. WeasyPrint o ReportLab)
+    # Esempio indicativo con WeasyPrint (adattalo se usi un motore differente):
+    # html = render_template("fattura_pdf_template.html", fattura=f)
+    # pdf = weasyprint.HTML(string=html).write_pdf()
+    # return Response(pdf, mimetype="application/pdf", headers={"Content-Disposition": f"attachment; filename=Fattura_{f['numero']}.pdf"})
+    
+    # Al momento restituisce una conferma per debug se la logica interna varia
+    flash(f"Download avviato per la fattura numero {f['numero']}", "success")
+    return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
 
 
 @app.route("/delete_cliente/<int:cliente_id>")

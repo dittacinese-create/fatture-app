@@ -147,15 +147,22 @@ function salvaCliente(id) {
     const codice_sdi = document.getElementById("ci_sdi_" + id).value;
     const pec = document.getElementById("ci_pec_" + id).value;
 
-    const formData = new FormData();
-    formData.append("nome", nome);
-    formData.append("indirizzo", indirizzo);
-    formData.append("partita_iva", partita_iva);
-    formData.append("codice_fiscale", codice_fiscale);
-    formData.append("codice_sdi", codice_sdi);
-    formData.append("pec", pec);
+    const payload = {
+        nome: nome,
+        indirizzo: indirizzo,
+        partita_iva: partita_iva,
+        codice_fiscale: codice_fiscale,
+        codice_sdi: codice_sdi,
+        pec: pec
+    };
 
-    fetch("/modifica_cliente/" + id, { method: "POST", body: formData })
+    fetch("/modifica_cliente/" + id, { 
+        method: "POST", 
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+    })
     .then(r => r.json())
     .then(function(data) {
         if (data.success) {
@@ -166,7 +173,12 @@ function salvaCliente(id) {
             document.getElementById("c_sdi_" + id).innerHTML = codice_sdi ? '<span class="badge badge-fornitura">' + codice_sdi + '</span>' : '';
             document.getElementById("c_pec_" + id).textContent = pec;
             annullaCliente(id);
+        } else {
+            alert("Errore durante il salvataggio del cliente.");
         }
+    }).catch(err => {
+        console.error(err);
+        alert("Errore di rete.");
     });
 }
 </script>
