@@ -159,5 +159,14 @@
     {{ fattura.iban }}
 </div>
 
+<!-- AUTO-PRINT DI SICUREZZA PER COMPATIBILITÀ RENDERING -->
+{% if autoprint %}
+<script>
+    window.onload = function() {
+        window.print();
+    };
+</script>
+{% endif %}
+
 </body>
 </html>

@@ -411,11 +411,23 @@ def aggiorna_fattura_ajax(fattura_id):
     return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
 
 
-# --- GESTIONE RUGHE MANUALI ---
+# --- GESTIONE RIGHE MANUALI ---
 
 @app.route("/add_riga", methods=["POST"])
 def add_riga():
     fattura_id = request.form.get("fattura_id")
+    
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    
+    # BLOCCO DI SICUREZZA FATTURA CHIUSA
+    cur.execute("SELECT stato FROM fatture WHERE id = %s", (fattura_id,))
+    f = cur.fetchone()
+    if f and f["stato"] == "CHIUSA":
+        cur.close()
+        flash("Impossibile aggiungere righe a una fattura CHIUSA.", "danger")
+        return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
+        
     descrizione = request.form.get("descrizione")
     quantita = request.form.get("quantita", 1.0)
     prezzo_unitario = request.form.get("prezzo", request.form.get("prezzo_unitario", 0.0))
@@ -427,9 +439,6 @@ def add_riga():
     except:
         quantita = 1.0
         prezzo_unitario = 0.0
-        
-    db = get_db()
-    cur = db.cursor()
     
     cur.execute("""
         INSERT INTO righe_fattura (fattura_id, descrizione, quantita, prezzo_unitario, unita_misura)
@@ -445,7 +454,16 @@ def add_riga():
 @app.route("/delete_riga_fattura/<int:riga_id>/<int:fattura_id>")
 def delete_riga_fattura(riga_id, fattura_id):
     db = get_db()
-    cur = db.cursor()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    
+    # BLOCCO DI SICUREZZA FATTURA CHIUSA
+    cur.execute("SELECT stato FROM fatture WHERE id = %s", (fattura_id,))
+    f = cur.fetchone()
+    if f and f["stato"] == "CHIUSA":
+        cur.close()
+        flash("Impossibile eliminare righe da una fattura CHIUSA.", "danger")
+        return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
+        
     cur.execute("DELETE FROM righe_fattura WHERE id = %s AND fattura_id = %s", (riga_id, fattura_id))
     ricalcola_totale_fattura(cur, fattura_id)
     db.commit()
@@ -453,16 +471,26 @@ def delete_riga_fattura(riga_id, fattura_id):
     return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
 
 
-# --- GESTIONE AGGIUNTIVA STRUTTURATA DDT (PER FA-TTURE DI TIPO FORNITURA) ---
+# --- GESTIONE AGGIUNTIVA STRUTTURATA DDT (PER FATTURE DI TIPO FORNITURA) ---
 
 @app.route("/add_ddt", methods=["POST"])
 def add_ddt():
     fattura_id = request.form.get("fattura_id")
+    
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    
+    # BLOCCO DI SICUREZZA FATTURA CHIUSA
+    cur.execute("SELECT stato FROM fatture WHERE id = %s", (fattura_id,))
+    f = cur.fetchone()
+    if f and f["stato"] == "CHIUSA":
+        cur.close()
+        flash("Impossibile aggiungere DDT a una fattura CHIUSA.", "danger")
+        return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
+        
     numero = request.form.get("numero")
     data = request.form.get("data")
     
-    db = get_db()
-    cur = db.cursor()
     cur.execute("INSERT INTO ddt (fattura_id, numero, data) VALUES (%s, %s, %s)", (fattura_id, numero, data))
     db.commit()
     cur.close()
@@ -472,7 +500,18 @@ def add_ddt():
 @app.route("/aggiorna_ddt/<int:ddt_id>", methods=["POST"])
 def aggiorna_ddt(ddt_id):
     db = get_db()
-    cur = db.cursor()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    
+    # Recupera il fattura_id associato al DDT
+    cur.execute("SELECT fattura_id FROM ddt WHERE id = %s", (ddt_id,))
+    ddt_item = cur.fetchone()
+    if ddt_item:
+        cur.execute("SELECT stato FROM fatture WHERE id = %s", (ddt_item["fattura_id"],))
+        f = cur.fetchone()
+        if f and f["stato"] == "CHIUSA":
+            cur.close()
+            return jsonify({"success": False, "error": "Impossibile modificare DDT di una fattura CHIUSA"}), 403
+            
     data = request.get_json()
     cur.execute("UPDATE ddt SET numero = %s, data = %s WHERE id = %s", (data.get("numero"), data.get("data"), ddt_id))
     db.commit()
@@ -483,7 +522,16 @@ def aggiorna_ddt(ddt_id):
 @app.route("/delete_ddt/<int:ddt_id>/<int:fattura_id>")
 def delete_ddt(ddt_id, fattura_id):
     db = get_db()
-    cur = db.cursor()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    
+    # BLOCCO DI SICUREZZA FATTURA CHIUSA
+    cur.execute("SELECT stato FROM fatture WHERE id = %s", (fattura_id,))
+    f = cur.fetchone()
+    if f and f["stato"] == "CHIUSA":
+        cur.close()
+        flash("Impossibile eliminare DDT da una fattura CHIUSA.", "danger")
+        return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
+        
     cur.execute("DELETE FROM ddt WHERE id = %s AND fattura_id = %s", (ddt_id, fattura_id))
     ricalcola_totale_fattura(cur, fattura_id)
     db.commit()
@@ -494,6 +542,17 @@ def delete_ddt(ddt_id, fattura_id):
 @app.route("/add_riga_prodotto", methods=["POST"])
 def add_riga_prodotto():
     fattura_id = request.form.get("fattura_id")
+    
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    
+    # BLOCCO DI SICUREZZA FATTURA CHIUSA
+    cur.execute("SELECT stato FROM fatture WHERE id = %s", (fattura_id,))
+    f = cur.fetchone()
+    if f and f["stato"] == "CHIUSA":
+        cur.close()
+        return jsonify({"success": False, "error": "Impossibile modificare una fattura CHIUSA"}), 403
+        
     ddt_id = request.form.get("ddt_id")
     prodotto_id = request.form.get("prodotto_id")
     quantita = request.form.get("quantita", 1.0)
@@ -504,9 +563,6 @@ def add_riga_prodotto():
     except:
         quantita = 1.0
 
-    db = get_db()
-    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    
     # Prendiamo i dati del prodotto di riferimento
     cur.execute("SELECT nome, prezzo_base, unita_misura FROM prodotti WHERE id = %s", (prodotto_id,))
     p = cur.fetchone()
@@ -534,18 +590,30 @@ def add_riga_prodotto():
 @app.route("/aggiorna_riga_ddt/<int:riga_id>", methods=["POST"])
 def aggiorna_riga_ddt(riga_id):
     db = get_db()
-    cur = db.cursor()
-    data = request.get_json()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
+    # Trova la fattura correlata prima di aggiornare per controllare lo stato
+    cur.execute("SELECT ddt_id FROM righe_ddt WHERE id = %s", (riga_id,))
+    riga_item = cur.fetchone()
+    if riga_item:
+        cur.execute("SELECT fattura_id FROM ddt WHERE id = %s", (riga_item["ddt_id"],))
+        ddt_item = cur.fetchone()
+        if ddt_item:
+            cur.execute("SELECT stato FROM fatture WHERE id = %s", (ddt_item["fattura_id"],))
+            f = cur.fetchone()
+            if f and f["stato"] == "CHIUSA":
+                cur.close()
+                return jsonify({"success": False, "error": "Impossibile modificare prodotti di una fattura CHIUSA"}), 403
+
+    data = request.get_json()
     quantita = float(data.get("quantita", 1.0))
     prezzo = float(data.get("prezzo", 0.0))
     
     cur.execute("UPDATE righe_ddt SET quantita = %s, prezzo = %s WHERE id = %s RETURNING ddt_id", (quantita, prezzo, riga_id))
-    ddt_id = cur.fetchone()[0]
+    ddt_id = cur.fetchone()["ddt_id"]
     
-    # Troviamo la fattura correlata per aggiornarne il totale complessivo
     cur.execute("SELECT fattura_id FROM ddt WHERE id = %s", (ddt_id,))
-    fattura_id = cur.fetchone()[0]
+    fattura_id = cur.fetchone()["fattura_id"]
     
     ricalcola_totale_fattura(cur, fattura_id)
     db.commit()
@@ -556,7 +624,16 @@ def aggiorna_riga_ddt(riga_id):
 @app.route("/delete_riga_ddt/<int:riga_id>/<int:fattura_id>")
 def delete_riga_ddt(riga_id, fattura_id):
     db = get_db()
-    cur = db.cursor()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    
+    # BLOCCO DI SICUREZZA FATTURA CHIUSA
+    cur.execute("SELECT stato FROM fatture WHERE id = %s", (fattura_id,))
+    f = cur.fetchone()
+    if f and f["stato"] == "CHIUSA":
+        cur.close()
+        flash("Impossibile eliminare prodotti da una fattura CHIUSA.", "danger")
+        return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
+        
     cur.execute("DELETE FROM righe_ddt WHERE id = %s", (riga_id,))
     ricalcola_totale_fattura(cur, fattura_id)
     db.commit()
@@ -568,8 +645,7 @@ def delete_riga_ddt(riga_id, fattura_id):
 
 @app.route("/pdf/<int:fattura_id>")
 def genera_pdf(fattura_id):
-    from flask import Response, render_template
-    import sys
+    from flask import render_template
     
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
@@ -580,9 +656,9 @@ def genera_pdf(fattura_id):
     
     if not f:
         cur.close()
-        return "Errore: Fattura non trovata nel database.", 404
+        return "Errore: Fattura non trovata.", 404
         
-    # 2. Recupera i dati del cliente collegato
+    # 2. Recupera i dati del cliente
     cliente = None
     if f["cliente_id"]:
         cur.execute("SELECT * FROM clienti WHERE id = %s", (f["cliente_id"],))
@@ -622,31 +698,17 @@ def genera_pdf(fattura_id):
     valore_imponibile = valore_totale / (1 + (aliquota / 100.0))
     valore_iva = valore_totale - valore_imponibile
 
-    # 5. Generazione PDF con tracciamento errore bloccante
-    try:
-        import weasyprint
-        
-        # Se il tuo file HTML del PDF si chiama in un altro modo (es. fattura_pdf.html), cambialo qui sotto:
-        html_content = render_template(
-            "fattura_pdf_template.html", 
-            fattura=dict(f),
-            cliente=cliente,
-            righe=righe,
-            imponibile=valore_imponibile,
-            iva=valore_iva,
-            totale=valore_totale
-        )
-        pdf_bin = weasyprint.HTML(string=html_content).write_pdf()
-        
-        return Response(
-            pdf_bin,
-            mimetype="application/pdf",
-            headers={"Content-Disposition": f"attachment; filename=Fattura_{f['numero']}.pdf"}
-        )
-    except Exception as e:
-        import traceback
-        errore_dettagliato = traceback.format_exc()
-        return f"<h3>Errore durante la generazione del PDF:</h3><pre>{errore_dettagliato}</pre>", 500
+    # 5. Rendering del template con trigger di stampa automatico
+    return render_template(
+        "fattura_pdf_template.html", 
+        fattura=dict(f),
+        cliente=cliente,
+        righe=righe,
+        imponibile=valore_imponibile,
+        iva=valore_iva,
+        totale=valore_totale,
+        autoprint=True  # Passiamo questa variabile per attivare il window.print()
+    )
 
 @app.route("/chiudi_fattura/<int:fattura_id>")
 def chiudi_fattura(fattura_id):
