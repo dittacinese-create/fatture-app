@@ -1127,37 +1127,46 @@ def dashboard():
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
-    # --- AGGIORNAMENTO AUTOMATICO VINCOLO DI CONTROLLO ---
+    # --- CORREZIONE VINCOLO DATABASE ---
     try:
-        cur.execute("""
-            ALTER TABLE fatture DROP CONSTRAINT IF EXISTS fatture_stato_pagamento_check;
-        """)
+        cur.execute("ALTER TABLE fatture DROP CONSTRAINT IF EXISTS fatture_stato_pagamento_check;")
         cur.execute("""
             ALTER TABLE fatture ADD CONSTRAINT fatture_stato_pagamento_check 
             CHECK (stato_pagamento IN ('Pagato', 'Non Pagato', 'Parziale', 'Parzialmente Pagato'));
         """)
         db.commit()
-    except Exception as e:
+    except Exception:
         db.rollback()
 
-    # --- IMPOSTAZIONE DEFAULT ANNO CORRENTE (2026) ---
-    anno_corrente = datetime.now().year # Sarà 2026
+    # --- LISTA COMPLETA CLIENTI PER AUTOCOMPLETAMENTO ---
+    clienti_lista = []
+    try:
+        cur.execute("SELECT nome FROM clienti ORDER BY nome ASC")
+        clienti_lista = [r['nome'] for r in cur.fetchall() if r['nome']]
+    except Exception as e:
+        db.rollback()
+        print(f"Errore recupero lista clienti: {e}")
+
+    # --- CONFIGURAZIONE DEFAULT ANNO CORRENTE (2026) ---
+    anno_corrente = 2026
     default_inizio = f"{anno_corrente}-01-01"
     default_fine = f"{anno_corrente}-12-31"
 
-    filtro_inizio = request.args.get('inizio', default_inizio).strip()
-    filtro_fine = request.args.get('fine', default_fine).strip()
-    filtro_tipo = request.args.get('tipo', '').strip()
-    filtro_cliente = request.args.get('cliente', '').strip()
-    filtro_stato = request.args.get('stato_pagamento', '').strip()
-
-    # Se l'utente preme "Azzera", i parametri arrivano vuoti. Ripristiniamo il default temporale:
-    if not filtro_inizio and not request.args.get('azzera'):
+    # Se l'utente non ha premuto "Filtra" ed è il primo accesso, o se ha premuto "Azzera"
+    if 'inizio' not in request.args or request.args.get('azzera'):
         filtro_inizio = default_inizio
-    if not filtro_fine and not request.args.get('azzera'):
         filtro_fine = default_fine
+        filtro_tipo = ""
+        filtro_cliente = ""
+        filtro_stato = ""
+    else:
+        filtro_inizio = request.args.get('inizio', '').strip() or default_inizio
+        filtro_fine = request.args.get('fine', '').strip() or default_fine
+        filtro_tipo = request.args.get('tipo', '').strip()
+        filtro_cliente = request.args.get('cliente', '').strip()
+        filtro_stato = request.args.get('stato_pagamento', '').strip()
 
-    # --- COSTRUZIONE QUERY ---
+    # --- QUERY ---
     query = """
         SELECT f.*, 
                COALESCE(c.nome, f.cliente) as cliente_nome
@@ -1209,7 +1218,6 @@ def dashboard():
             if stato_pag == 'pagato':
                 totale_pagato += importo_val
             elif stato_pag in ['parziale', 'parzialmente pagato']:
-                # Se parziale, leggiamo l'importo pagato memorizzato, altrimenti andiamo in fallback
                 gia_pagato = f.get('totale_pagato') or f.get('importo_pagato') or 0
                 try:
                     gia_pagato_float = float(gia_pagato)
@@ -1222,7 +1230,7 @@ def dashboard():
 
     except Exception as e:
         db.rollback()
-        print(f"Errore dashboard: {e}")
+        print(f"Errore query dashboard: {e}")
         fatture = []
         totale_generale = 0.0
         totale_pagato = 0.0
@@ -1236,6 +1244,7 @@ def dashboard():
         totale_generale=totale_generale,
         totale_pagato=totale_pagato,
         totale_mancante=totale_mancante,
+        clienti_lista=clienti_lista,
         filtro_inizio=filtro_inizio,
         filtro_fine=filtro_fine,
         filtro_tipo=filtro_tipo,
