@@ -1,24 +1,19 @@
 {% extends "base.html" %}
 {% block content %}
 
-<!-- BANNER DI SBLOCCO DI SICUREZZA (Mostrato solo se la fattura è CHIUSA) -->
-{% if fattura.stato == "CHIUSA" %}
-<div class="card" style="border-left: 4px solid #ef4444; background: #fef2f2; margin-bottom: 1.5rem;">
-    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
-        <div>
-            <h3 style="margin: 0; font-size: 14px; color: #991b1b; font-weight: 600;">🔒 Documento Bloccato (Stato CHIUSA)</h3>
-            <p style="margin: 4px 0 0 0; font-size: 13px; color: #7f1d1d;">Le modifiche, le aggiunte e le eliminazioni sono disabilitate per preservare l'integrità del documento fiscale.</p>
-        </div>
-        <button type="button" class="btn btn-danger btn-sm" onclick="sbloccaFatturaUnificato({{ fattura.id }})" style="background: #dc2626;">
-            🔓 Inserisci Password e Riapri
-        </button>
-    </div>
-</div>
-{% endif %}
-
 <div class="topbar">
-    <h1>Fattura {{ fattura.numero }}</h1>
-    <div class="flex gap-1">
+    <div style="display: flex; align-items: center; gap: 12px;">
+        <h1>Fattura {{ fattura.numero }}</h1>
+        {% if fattura.stato == "CHIUSA" %}
+        <span class="badge badge-chiusa" style="background: #fef2f2; color: #991b1b; border: 1px solid #fee2e2;">🔒 Chiusa (Bloccata)</span>
+        {% endif %}
+    </div>
+    <div class="flex gap-1" style="align-items: center;">
+        {% if fattura.stato == "CHIUSA" %}
+        <button type="button" class="btn btn-sm" onclick="sbloccaFatturaUnificato({{ fattura.id }})" style="background: #f3f4f6; color: #dc2626; border: 1px solid #f3f4f6; padding: 6px 12px; font-weight: 500;">
+            🔓 Sblocca
+        </button>
+        {% endif %}
         <a href="/pdf/{{ fattura.id }}" class="btn btn-primary">⬇ Scarica PDF</a>
         <a href="/fatture" class="btn">← Indietro</a>
     </div>
@@ -311,7 +306,6 @@
             <tbody>
                 {% for r in righe %}
                 <tr>
-                    <!-- [SEZIONE MODIFICHE FUTURE: Predisposizione per l'In-place editing delle righe manuali qui] -->
                     <td>{{ r.descrizione }}</td>
                     <td>{{ r.quantita }}</td>
                     <td>{{ r.unita_misura }}</td>
@@ -359,15 +353,11 @@
 const carrelloDDT = {};
 
 // ===============================================
-// FUNZIONE FUNZIONALE: SBLOCCO UNIFICATO CON PASSWORD
+// SBLOCCO UNIFICATO CON PASSWORD
 // ===============================================
 function sbloccaFatturaUnificato(fatturaId) {
-    const pwd = prompt("Inserisci la password di sicurezza per riaprire e sbloccare questa fattura:");
+    const pwd = prompt("Inserisci la password di sicurezza per sbloccare la fattura:");
     if (pwd === null) return;
-    if (pwd.trim() === "") {
-        alert("La password non può essere vuota.");
-        return;
-    }
 
     fetch(`/riapri_fattura/${fatturaId}`, {
         method: 'POST',
@@ -377,7 +367,6 @@ function sbloccaFatturaUnificato(fatturaId) {
     .then(res => res.json())
     .then(data => {
         if (data.success) {
-            alert(data.message || "Fattura sbloccata con successo!");
             window.location.reload();
         } else {
             alert("Errore: " + data.error);
@@ -385,12 +374,12 @@ function sbloccaFatturaUnificato(fatturaId) {
     })
     .catch(err => {
         console.error(err);
-        alert("Errore durante la comunicazione di rete.");
+        alert("Errore di rete.");
     });
 }
 
 // ===============================================
-// INSERIMENTO ASINCRONO RIGA MANUALE (VELOCE)
+// INSERIMENTO ASINCRONO RIGA MANUALE
 // ===============================================
 async function inviaRigaManualeAsincrona(fattura_id) {
     const desc = document.getElementById("manuale_descrizione").value.trim();
@@ -421,7 +410,7 @@ async function inviaRigaManualeAsincrona(fattura_id) {
         window.location.reload();
     } catch (e) {
         console.error(e);
-        alert("Errore durante l'inserimento rapido.");
+        alert("Errore durante l'inserimento.");
         btn.disabled = false;
         btn.textContent = "+ Aggiungi";
     }
@@ -505,7 +494,6 @@ function modificaRigaDDT(id) {
     document.getElementById("btn_salva_" + id).style.display = "inline";
 }
 
-// Funzione ponte per raccogliere i dati della riga e inviarli tramite la nuova logica AJAX
 function salvaRigaDDT_Intermedio(id, statoFattura) {
     const qty = parseFloat(document.getElementById("inp_qty_" + id).value);
     const prezzo = parseFloat(document.getElementById("inp_prezzo_" + id).value);
@@ -518,7 +506,6 @@ function salvaRigaDDT_Intermedio(id, statoFattura) {
     salvaRigaAjax(id, datiModificati, statoFattura);
 }
 
-// Richiede la password se lo stato è CHIUSA
 function richiediPasswordSeChiusa(statoFattura) {
     if (statoFattura === 'CHIUSA') {
         return prompt("Il documento è chiuso. Inserisci la password per autorizzare questa specifica modifica:");
@@ -526,12 +513,10 @@ function richiediPasswordSeChiusa(statoFattura) {
     return "";
 }
 
-// Esempio di integrazione su chiamata AJAX (Aggiorna riga DDT / Riga manuale)
 function salvaRigaAjax(rigaId, datiModificati, statoFattura) {
     const pwd = richiediPasswordSeChiusa(statoFattura);
-    if (statoFattura === 'CHIUSA' && pwd === null) return; // Bloccato
+    if (statoFattura === 'CHIUSA' && pwd === null) return; 
 
-    // Aggiunge la password al body JSON
     datiModificati.password = pwd;
 
     fetch(`/aggiorna_riga_ddt/${rigaId}`, {
@@ -566,7 +551,7 @@ function aggiungiAzioneRicercaAlCarrello(ddt_id) {
     const qty = document.getElementById("qty_ricerca_" + ddt_id).value;
     const prezzo = document.getElementById("prezzo_ricerca_" + ddt_id).value;
 
-    if (!prod_id) { alert("Seleziona un prodotto dalla ricerca."); return; }
+    if (!prod_id) { alert("Seleziona un prodotto."); return; }
 
     let prodottiTutti = [];
     try {
@@ -786,7 +771,6 @@ function setupProdottoAutocomplete(ddt_id) {
     });
 }
 
-// Inizializzazione automatica dei ddt esistenti al caricamento
 document.addEventListener("DOMContentLoaded", function() {
     {% if ddt_list %}
         {% for ddt in ddt_list %}

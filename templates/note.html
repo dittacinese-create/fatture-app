@@ -126,67 +126,88 @@
 </style>
 
 <script>
-let notaCorrenteId = {{ note[0].id if note else 'null' }};
+let notaCorrenteId = {% if note %}{{ note[0].id }}{% else %}null{% endif %};
 let salvaTimeout = null;
 
-// Carica la prima nota all'apertura
-{% if note %}
-window.onload = function() {
-    caricaNota({{ note[0].id }});
-}
-{% endif %}
+// Carica la prima nota in sicurezza all'apertura se presente
+document.addEventListener("DOMContentLoaded", function() {
+    {% if note %}
+        caricaNota(notaCorrenteId);
+    {% endif %}
+});
 
 function eseguiComando(cmd, valore) {
-    document.getElementById("editor").focus();
+    const editor = document.getElementById("editor");
+    if(!editor) return;
+    editor.focus();
     document.execCommand(cmd, false, valore || null);
 }
 
 function apriNota(id, el) {
     document.querySelectorAll(".nota-item").forEach(function(i) { i.classList.remove("attiva"); });
-    el.classList.add("attiva");
+    if(el) el.classList.add("attiva");
     caricaNota(id);
 }
 
 function caricaNota(id) {
+    if(!id) return;
     notaCorrenteId = id;
     fetch("/nota/" + id)
     .then(r => r.json())
     .then(function(data) {
-        document.getElementById("titolo_nota").value = data.titolo || "";
-        document.getElementById("editor").innerHTML = data.contenuto || "";
-    });
+        const inputTitolo = document.getElementById("titolo_nota");
+        const editor = document.getElementById("editor");
+        if(inputTitolo) inputTitolo.value = data.titolo || "";
+        if(editor) editor.innerHTML = data.contenuto || "";
+    })
+    .catch(err => console.error("Errore nel recupero della nota:", err));
 }
 
 function salvaNota(manuale) {
     if (!notaCorrenteId) return;
     clearTimeout(salvaTimeout);
-    salvaTimeout = setTimeout(function() {
+    
+    const eseguiFetch = () => {
         const titolo = document.getElementById("titolo_nota").value;
         const contenuto = document.getElementById("editor").innerHTML;
         fetch("/salva_nota/" + notaCorrenteId, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ titolo: titolo, contenuto: contenuto })
-        }).then(r => r.json()).then(function(data) {
+        })
+        .then(r => r.json())
+        .then(function(data) {
             if (data.success) {
-                // Aggiorna titolo nella lista
                 const item = document.getElementById("item_" + notaCorrenteId);
                 if (item) item.querySelector(".nota-titolo").textContent = titolo || "Senza titolo";
                 if (manuale) {
                     const msg = document.getElementById("msg_salvato");
-                    msg.style.display = "inline";
-                    setTimeout(function() { msg.style.display = "none"; }, 2000);
+                    if(msg) {
+                        msg.style.display = "inline";
+                        setTimeout(function() { msg.style.display = "none"; }, 2000);
+                    }
                 }
             }
-        });
-    }, manuale ? 0 : 1500);
+        })
+        .catch(err => console.error("Errore durante il salvataggio:", err));
+    };
+
+    if (manuale) {
+        eseguiFetch();
+    } else {
+        salvaTimeout = setTimeout(eseguiFetch, 1500);
+    }
 }
 
 function nuovaNota() {
     fetch("/nuova_nota", { method: "POST" })
     .then(r => r.json())
     .then(function(data) {
-        if (data.success) window.location.reload();
+        if (data.success) {
+            window.location.reload();
+        } else {
+            alert("Errore nella creazione della nota.");
+        }
     });
 }
 
@@ -196,7 +217,11 @@ function eliminaNota() {
     fetch("/elimina_nota/" + notaCorrenteId, { method: "POST" })
     .then(r => r.json())
     .then(function(data) {
-        if (data.success) window.location.reload();
+        if (data.success) {
+            window.location.reload();
+        } else {
+            alert("Errore durante l'eliminazione.");
+        }
     });
 }
 </script>
