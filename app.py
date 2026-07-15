@@ -28,6 +28,9 @@ def init_db():
         db = get_db()
         cur = db.cursor()
         
+        # RIGA TEMPORANEA: Cancella la vecchia tabella per ricrearla con i campi nuovi
+        cur.execute("DROP TABLE IF EXISTS clienti CASCADE;")
+        
         # Tabella Clienti Completa
         cur.execute("""
             CREATE TABLE IF NOT EXISTS clienti (
@@ -150,7 +153,7 @@ def vedi_fattura(fattura_id):
     f = cur.fetchone()
     cur.close()
     if not f:
-        flash("Fattura non trouvée.", "danger")
+        flash("Fattura non trovata.", "danger")
         return redirect(url_for("fatture"))
     return render_template("fattura_dettaglio.html", f=f)
 
@@ -166,7 +169,7 @@ def delete_fattura(fattura_id):
     return redirect(url_for("fatture"))
 
 
-# --- SEZIONE CLIENTI (GESTIONE COMPLETA) ---
+# --- SEZIONE CLIENTI ---
 
 @app.route("/clienti", methods=["GET", "POST"])
 def clienti():
