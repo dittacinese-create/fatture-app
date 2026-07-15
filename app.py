@@ -1127,45 +1127,32 @@ def dashboard():
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
-    cur.execute("""
-        SELECT 
-            COALESCE(SUM(totale), 0) as totale_fatturato, 
-            COALESCE(SUM(CASE WHEN stato_pagamento='Pagata' THEN totale ELSE 0 END), 0) as totale_incassato, 
-            COALESCE(SUM(CASE WHEN stato_pagamento='In attesa' THEN totale ELSE 0 END), 0) as totale_attesa, 
-            COALESCE(SUM(CASE WHEN stato_pagamento='Non pagata' THEN totale ELSE 0 END), 0) as totale_non_pagato 
-        FROM fatture WHERE stato='CHIUSA'
-    """)
-    stats = cur.fetchone()
-    
-    cur.execute("""
-        SELECT 
-            COUNT(*) as totale_invii, 
-            COUNT(CASE WHEN stato='BOZZA' THEN 1 END) as bozze, 
-            COUNT(CASE WHEN stato='CHIUSA' THEN 1 END) as chiuse 
-        FROM fatture
-    """)
-    conteggi = cur.fetchone()
-    
-    # query protetta da conversioni di tipo data errate in PostgreSQL
-    cur.execute("""
-        SELECT 
-            TO_CHAR(data::date, 'YYYY-MM') as mese, 
-            SUM(totale) as totale 
-        FROM fatture 
-        WHERE stato='CHIUSA' AND data IS NOT NULL
-        GROUP BY TO_CHAR(data::date, 'YYYY-MM') 
-        ORDER BY mese DESC 
-        LIMIT 6
-    """)
-    trend_mensile = cur.fetchall()
-    
-    cur.close()
-    return render_template(
-        "dashboard.html", 
-        stats=stats, 
-        conteggi=conteggi, 
-        trend_mensile=trend_mensile
-    )
+    # Recuperiamo tutte le fatture con i campi corrispondenti al foglio Google Sheets
+    # Adatta i nomi dei campi se differiscono leggermente nel tuo database
+    try:
+        cur.execute("""
+            SELECT 
+                id,
+                numero_fattura,
+                cliente,
+                data_fattura,
+                data_scadenza,
+                importo_totale,
+                note,
+                stato,
+                data_pagamento
+            FROM fatture
+            ORDER BY id ASC
+        """)
+        fatture = cur.fetchall()
+    except Exception as e:
+        db.rollback()
+        print(f"Errore caricamento dati dashboard: {e}")
+        fatture = []
+    finally:
+        cur.close()
+        
+    return render_template("dashboard.html", fatture=fatture)
 
 # ==============================================================================
 # 10.NOTE 
