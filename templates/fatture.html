@@ -87,8 +87,33 @@
                     {% endif %}
                     &nbsp;·&nbsp;
                     <a href="/delete_fattura/{{ f.id }}"
-                       onclick="return confirm('Eliminare fattura {{ f.numero }}?')"
-                       class="action-link danger">Elimina</a>
+   onclick="return richiediPasswordEliminazione('{{ f.numero }}')"
+   class="action-link danger">Elimina</a>
+
+<script>
+function richiediPasswordEliminazione(numeroFattura) {
+    const passwordCorretta = "123; // Sostituisci "la_tua_password" con quella che preferisci
+    
+    // Prima chiediamo la conferma classica
+    if (!confirm("Sei sicuro di voler eliminare la fattura " + numeroFattura + "?")) {
+        return false;
+    }
+    
+    // Se conferma, chiediamo la password
+    const passwordInserita = prompt("Inserisci la password di sicurezza per completare l'eliminazione:");
+    
+    if (passwordInserita === null) {
+        return false; // L'utente ha premuto 'Annulla'
+    }
+    
+    if (passwordInserita === 123) {
+        return true; // Password corretta, procede con l'eliminazione
+    } else {
+        alert("Password errata! Eliminazione annullata.");
+        return false; // Password errata, blocca l'azione
+    }
+}
+</script>
                 </td>
             </tr>
             {% else %}
