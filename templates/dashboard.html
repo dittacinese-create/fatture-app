@@ -1,129 +1,190 @@
-@app.route("/dashboard")
-def dashboard():
-    db = get_db()
-    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    
-    # --- CORREZIONE VINCOLO DATABASE ---
-    try:
-        cur.execute("ALTER TABLE fatture DROP CONSTRAINT IF EXISTS fatture_stato_pagamento_check;")
-        cur.execute("""
-            ALTER TABLE fatture ADD CONSTRAINT fatture_stato_pagamento_check 
-            CHECK (stato_pagamento IN ('Pagato', 'Non Pagato', 'Parziale', 'Parzialmente Pagato'));
-        """)
-        db.commit()
-    except Exception:
-        db.rollback()
+{% extends "base.html" %}
+{% block content %}
 
-    # --- LISTA COMPLETA CLIENTI PER AUTOCOMPLETAMENTO ---
-    clienti_lista = []
-    try:
-        cur.execute("SELECT nome FROM clienti ORDER BY nome ASC")
-        clienti_lista = [r['nome'] for r in cur.fetchall() if r['nome']]
-    except Exception as e:
-        db.rollback()
-        print(f"Errore recupero lista clienti: {e}")
-
-    # --- CONFIGURAZIONE DEFAULT ANNO CORRENTE (2026) ---
-    anno_corrente = 2026
-    default_inizio = f"{anno_corrente}-01-01"
-    default_fine = f"{anno_corrente}-12-31"
-
-    # Se l'utente non ha premuto "Filtra" ed è il primo accesso, o se ha premuto "Azzera"
-    if 'inizio' not in request.args or request.args.get('azzera'):
-        filtro_inizio = default_inizio
-        filtro_fine = default_fine
-        filtro_tipo = ""
-        filtro_cliente = ""
-        filtro_stato = ""
-    else:
-        filtro_inizio = request.args.get('inizio', '').strip() or default_inizio
-        filtro_fine = request.args.get('fine', '').strip() or default_fine
-        filtro_tipo = request.args.get('tipo', '').strip()
-        filtro_cliente = request.args.get('cliente', '').strip()
-        filtro_stato = request.args.get('stato_pagamento', '').strip()
-
-    # --- QUERY ---
-    query = """
-        SELECT f.*, 
-               COALESCE(c.nome, f.cliente) as cliente_nome
-        FROM fatture f
-        LEFT JOIN clienti c ON f.cliente_id = c.id
-        WHERE 1=1
-    """
-    params = []
-
-    if filtro_inizio:
-        query += " AND f.data_fattura >= %s"
-        params.append(filtro_inizio)
-    if filtro_fine:
-        query += " AND f.data_fattura <= %s"
-        params.append(filtro_fine)
-    if filtro_tipo:
-        query += " AND UPPER(f.tipologia) = UPPER(%s)"
-        params.append(filtro_tipo)
-    if filtro_cliente:
-        query += " AND (COALESCE(c.nome, f.cliente) ILIKE %s)"
-        params.append(f"%{filtro_cliente}%")
-    if filtro_stato:
-        query += " AND f.stato_pagamento = %s"
-        params.append(filtro_stato)
-
-    query += " ORDER BY f.id ASC"
-
-    try:
-        cur.execute(query, tuple(params))
-        fatture = cur.fetchall()
+<!-- HEADER E BARRA KPI MINIMALE -->
+<div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 25px;">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h1 style="margin: 0; font-size: 24px; font-weight: bold; color: #1e293b;">Dashboard Generale</h1>
         
-        totale_generale = 0.0
-        totale_pagato = 0.0
-        totale_mancante = 0.0
-        
-        for f in fatture:
-            importo_val = f.get('importo_totale') or f.get('importo') or f.get('totale') or 0
-            if isinstance(importo_val, str):
-                try:
-                    importo_val = float(importo_val.replace('.', '').replace(',', '.'))
-                except ValueError:
-                    importo_val = 0.0
-            else:
-                importo_val = float(importo_val)
-                
-            totale_generale += importo_val
-            
-            stato_pag = str(f.get('stato_pagamento') or '').strip().lower()
-            if stato_pag == 'pagato':
-                totale_pagato += importo_val
-            elif stato_pag in ['parziale', 'parzialmente pagato']:
-                gia_pagato = f.get('totale_pagato') or f.get('importo_pagato') or 0
-                try:
-                    gia_pagato_float = float(gia_pagato)
-                except (ValueError, TypeError):
-                    gia_pagato_float = 0.0
-                totale_pagato += gia_pagato_float
-                totale_mancante += max(0.0, importo_val - gia_pagato_float)
-            else:
-                totale_mancante += importo_val
+        <button id="toggleFiltri" style="display: flex; align-items: center; gap: 8px; background-color: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+            Mostra / Nascondi Filtri
+        </button>
+    </div>
 
-    except Exception as e:
-        db.rollback()
-        print(f"Errore query dashboard: {e}")
-        fatture = []
-        totale_generale = 0.0
-        totale_pagato = 0.0
-        totale_mancante = 0.0
-    finally:
-        cur.close()
+    <!-- RIGA KPI SCURA ED ELEGANTE -->
+    <div style="display: flex; gap: 2px; background-color: #0f172a; padding: 4px; border-radius: 8px; color: white; width: 100%;">
+        <div style="flex: 1; padding: 12px 20px; text-align: center; border-right: 1px solid #1e293b;">
+            <span style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Totale Fatturato (2026)</span>
+            <div style="font-size: 20px; font-weight: bold; color: #f8fafc; margin-top: 4px;">
+                € {{ "{:,.2f}".format(totale_generale).replace(',', 'X').replace('.', ',').replace('X', '.') }}
+            </div>
+        </div>
+        <div style="flex: 1; padding: 12px 20px; text-align: center; border-right: 1px solid #1e293b;">
+            <span style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Totale Pagato</span>
+            <div style="font-size: 20px; font-weight: bold; color: #4ade80; margin-top: 4px;">
+                € {{ "{:,.2f}".format(totale_pagato).replace(',', 'X').replace('.', ',').replace('X', '.') }}
+            </div>
+        </div>
+        <div style="flex: 1; padding: 12px 20px; text-align: center;">
+            <span style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Totale Mancante</span>
+            <div style="font-size: 20px; font-weight: bold; color: #f87171; margin-top: 4px;">
+                € {{ "{:,.2f}".format(totale_mancante).replace(',', 'X').replace('.', ',').replace('X', '.') }}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- PANNELLO FILTRI A SCOMPARSA -->
+<div id="pannelloFiltri" style="display: none; background: #f8fafc; padding: 15px; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 20px;">
+    <form method="GET" action="{{ url_for('dashboard') }}" style="display: flex; flex-wrap: wrap; gap: 15px; align-items: flex-end;">
         
-    return render_template(
-        "dashboard.html", 
-        fatture=fatture,
-        totale_generale=totale_generale,
-        totale_pagato=totale_pagato,
-        totale_mancante=totale_mancante,
-        clienti_lista=clienti_lista,
-        filtro_inizio=filtro_inizio,
-        filtro_fine=filtro_fine,
-        filtro_tipo=filtro_tipo,
-        filtro_cliente=filtro_cliente,
-        filtro_stato=filtro_stato
-    )
+        <!-- Filtro Periodo -->
+        <div style="display: flex; flex-direction: column; gap: 5px;">
+            <label style="font-size: 11px; font-weight: bold; color: #475569; text-transform: uppercase;">Dal:</label>
+            <input type="date" name="inizio" value="{{ filtro_inizio }}" style="padding: 7px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; width: 135px;">
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 5px;">
+            <label style="font-size: 11px; font-weight: bold; color: #475569; text-transform: uppercase;">Al:</label>
+            <input type="date" name="fine" value="{{ filtro_fine }}" style="padding: 7px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; width: 135px;">
+        </div>
+
+        <!-- Filtro Cliente con Autocompletamento real-time -->
+        <div style="display: flex; flex-direction: column; gap: 5px; flex-grow: 1; min-width: 180px;">
+            <label style="font-size: 11px; font-weight: bold; color: #475569; text-transform: uppercase;">Cerca Cliente:</label>
+            <input type="text" name="cliente" id="inputCliente" list="listaClienti" value="{{ filtro_cliente }}" placeholder="Inizia a digitare..." style="padding: 7px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;" autocomplete="off">
+            <datalist id="listaClienti">
+                {% for cliente in clienti_lista %}
+                    <option value="{{ cliente }}">
+                {% endfor %}
+            </datalist>
+        </div>
+
+        <!-- Filtro Tipologia -->
+        <div style="display: flex; flex-direction: column; gap: 5px; width: 130px;">
+            <label style="font-size: 11px; font-weight: bold; color: #475569; text-transform: uppercase;">Tipologia:</label>
+            <select name="tipo" style="padding: 7px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: white;">
+                <option value="">Tutte</option>
+                <option value="MANUALE" {% if filtro_tipo == 'MANUALE' %}selected{% endif %}>Manuale</option>
+                <option value="FORNITURA" {% if filtro_tipo == 'FORNITURA' %}selected{% endif %}>Fornitura</option>
+            </select>
+        </div>
+
+        <!-- Filtro Stato Pagamento -->
+        <div style="display: flex; flex-direction: column; gap: 5px; width: 140px;">
+            <label style="font-size: 11px; font-weight: bold; color: #475569; text-transform: uppercase;">Stato Pagamento:</label>
+            <select name="stato_pagamento" style="padding: 7px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: white;">
+                <option value="">Tutti</option>
+                <option value="Pagato" {% if filtro_stato == 'Pagato' %}selected{% endif %}>Pagato</option>
+                <option value="Parziale" {% if filtro_stato == 'Parziale' %}selected{% endif %}>Parziale</option>
+                <option value="Non Pagato" {% if filtro_stato == 'Non Pagato' %}selected{% endif %}>Non Pagato</option>
+            </select>
+        </div>
+
+        <input type="hidden" name="azzera" id="inputAzzera" value="">
+
+        <!-- Pulsanti Azione -->
+        <div style="display: flex; gap: 10px;">
+            <button type="submit" style="background-color: #2563eb; color: white; border: none; padding: 7px 18px; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: bold;">Applica</button>
+            <button type="button" onclick="azzeraFiltri()" style="background-color: #e2e8f0; color: #475569; border: none; padding: 7px 18px; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: bold;">Azzera</button>
+        </div>
+    </form>
+</div>
+
+<!-- TABELLA DATI -->
+<div class="card" style="padding: 0; overflow-x: auto; border: 1px solid #cbd5e1; border-radius: 4px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+    <table class="tabella-sheets" style="width: 100%; border-collapse: collapse; font-family: Arial, sans-serif; font-size: 13px; color: #1c1c1c;">
+        <thead>
+            <tr style="background-color: #f2c4bc; text-align: left;">
+                <th style="border: 1px solid #cbd5e1; padding: 8px 10px; font-weight: bold; width: 80px; text-align: center;">N. Fattura</th>
+                <th style="border: 1px solid #cbd5e1; padding: 8px 10px; font-weight: bold; min-width: 160px;">Cliente</th>
+                <th style="border: 1px solid #cbd5e1; padding: 8px 10px; font-weight: bold; width: 110px; text-align: center;">Data Fattura</th>
+                <th style="border: 1px solid #cbd5e1; padding: 8px 10px; font-weight: bold; width: 110px; text-align: center;">Scadenza</th>
+                <th style="border: 1px solid #cbd5e1; padding: 8px 10px; font-weight: bold; text-align: right; width: 130px;">Importo Totale (€)</th>
+                <th style="border: 1px solid #cbd5e1; padding: 8px 10px; font-weight: bold; min-width: 150px;">Note / Cantiere</th>
+                <th style="border: 1px solid #cbd5e1; padding: 8px 10px; font-weight: bold; width: 120px; text-align: center;">Stato Pagamento</th>
+                <th style="border: 1px solid #cbd5e1; padding: 8px 10px; font-weight: bold; width: 120px; text-align: center; border-right: none;">Data Pagamento</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for f in fatture %}
+            <tr style="border-bottom: 1px solid #cbd5e1; {% if loop.index is odd %}background-color: #fafafa;{% endif %}">
+                <td style="border: 1px solid #cbd5e1; padding: 7px 10px; font-weight: bold; text-align: center;">
+                    {{ f.numero_fattura or f.numero or f.id }}
+                </td>
+                <td style="border: 1px solid #cbd5e1; padding: 7px 10px;">
+                    {{ f.cliente_nome or 'Cliente Generico' }}
+                </td>
+                <td style="border: 1px solid #cbd5e1; padding: 7px 10px; text-align: center;">
+                    {{ f.data_fattura or f.data or '' }}
+                </td>
+                <td style="border: 1px solid #cbd5e1; padding: 7px 10px; text-align: center;">
+                    {{ f.data_scadenza or f.scadenza or '' }}
+                </td>
+                <td style="border: 1px solid #cbd5e1; padding: 7px 10px; text-align: right; font-weight: 500;">
+                    {% set imp = f.importo_totale or f.importo or f.totale or 0 %}
+                    {% if imp is string %}
+                        {{ imp }}
+                    {% else %}
+                        {{ "{:,.2f}".format(imp | float).replace(',', 'X').replace('.', ',').replace('X', '.') }}
+                    {% endif %}
+                </td>
+                <td style="border: 1px solid #cbd5e1; padding: 7px 10px;">
+                    {{ f.note or f.cantiere or '' }}
+                </td>
+                <td style="border: 1px solid #cbd5e1; padding: 7px 10px; font-weight: bold; text-align: center;">
+                    {% set stato_pag = (f.stato_pagamento or 'Non Pagato') | lower %}
+                    {% if stato_pag == 'pagato' %}
+                        <span style="background-color: #dcfce7; color: #16a34a; padding: 4px 10px; border-radius: 4px; display: inline-block; font-size: 11px;">PAGATO</span>
+                    {% elif stato_pag in ['parziale', 'parzialmente pagato'] %}
+                        <span style="background-color: #fef3c7; color: #d97706; padding: 4px 10px; border-radius: 4px; display: inline-block; font-size: 11px;">PARZIALE</span>
+                    {% else %}
+                        <span style="background-color: #fee2e2; color: #dc2626; padding: 4px 10px; border-radius: 4px; display: inline-block; font-size: 11px;">NON PAGATO</span>
+                    {% endif %}
+                </td>
+                <td style="border: 1px solid #cbd5e1; padding: 7px 10px; text-align: center; border-right: none;">
+                    {{ f.data_pagamento or f.pagato_il or '' }}
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="8" style="padding: 24px; text-align: center; color: #64748b; font-size: 14px;">
+                    Nessuna fattura presente per l'anno 2026.
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<script>
+// Toggle filtri
+const btnToggle = document.getElementById('toggleFiltri');
+const pannello = document.getElementById('pannelloFiltri');
+
+const urlParams = new URLSearchParams(window.location.search);
+const haFiltriAttivi = urlParams.has('cliente') || urlParams.has('tipo') || urlParams.has('stato_pagamento');
+if (haFiltriAttivi) {
+    pannello.style.display = 'block';
+}
+
+btnToggle.addEventListener('click', () => {
+    if (pannello.style.display === 'none') {
+        pannello.style.display = 'block';
+    } else {
+        pannello.style.display = 'none';
+    }
+});
+
+function azzeraFiltri() {
+    window.location.href = "{{ url_for('dashboard') }}?azzera=1";
+}
+</script>
+
+<style>
+.tabella-sheets tbody tr:hover {
+    background-color: #f8fafc !important;
+}
+</style>
+
+{% endblock %}
