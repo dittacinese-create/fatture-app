@@ -60,10 +60,10 @@
         <td>
             <div class="label-parte">CEDENTE / PRESTATORE</div>
             <div class="info-parte">
-                <strong>{{ SHI MEIYE }}</strong><br>
-                {{ Via Vigne di Spagna SNC - 12032 Barge CN }}<br>
-                P.IVA: {{ 04136510049 }}<br>
-                C.F. {{ SHIMYE66H54Z210G }}<br>
+                <strong>SHI MEIYE</strong><br>
+                Via Vigne di Spagna SNC - 12032 Barge CN<br>
+                P.IVA: 04136510049<br>
+                C.F. SHIMYE66H54Z210G<br>
             </div>
         </td>
         <td class="right">
@@ -111,7 +111,7 @@
                 <td>{{ r.unita_misura }}</td>
                 <td class="right">{{ r.quantita }}</td>
                 <td class="right">{{ "%.2f"|format(r.prezzo) }}&euro;</td>
-                <td class="right">{{ "%.2f"|format(r.totale) }}&trade;</td>
+                <td class="right">{{ "%.2f"|format(r.totale) }}&euro;</td>
             </tr>
             {% endif %}{% endfor %}
         </tbody>
