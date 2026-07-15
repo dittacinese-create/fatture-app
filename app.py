@@ -222,44 +222,61 @@ def nueva_fattura():
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
 
-    # Convertiamo il dizionario in una lista adatta al template
     elenco_banche = list(BANCHE.values())
     
     if request.method == "POST":
+        cliente_id_raw = request.form.get("cliente_id")
+        
+        # Regola 1: Obbligo assoluto di scegliere un cliente valido
+        if not cliente_id_raw or not cliente_id_raw.strip():
+            cur.execute("SELECT id, nome FROM clienti ORDER BY nome ASC")
+            clienti = cur.fetchall()
+            cur.close()
+            flash("Errore: È obbligatorio selezionare un cliente per emettere una fattura.", "danger")
+            return render_template("nuova_fattura.html", clienti=clienti, banche=elenco_banche, data_oggi=datetime.now().strftime("%Y-%m-%d"))
+
+        try:
+            cliente_id = int(cliente_id_raw)
+            cur.execute("SELECT nome FROM clienti WHERE id = %s", (cliente_id,))
+            cliente = cur.fetchone()
+            if not cliente:
+                raise ValueError
+            cliente_nome = cliente["nome"]
+        except ValueError:
+            cur.execute("SELECT id, nome FROM clienti ORDER BY nome ASC")
+            clienti = cur.fetchall()
+            cur.close()
+            flash("Errore: Cliente selezionato non valido.", "danger")
+            return render_template("nuova_fattura.html", clienti=clienti, banche=elenco_banche, data_oggi=datetime.now().strftime("%Y-%m-%d"))
+
         numero = request.form.get("numero")
         data = request.form.get("data")
         data_scadenza = request.form.get("data_scadenza")
-        cliente_id_raw = request.form.get("cliente_id")
         tipo = request.form.get("tipo", "MANUALE")
-        regime_iva = request.form.get("regime_iva", "22")
         banca_id = request.form.get("banca_id")
         totale = request.form.get("totale", 0.0)
         note = request.form.get("note", "")
         stato_pagamento = request.form.get("stato_pagamento", "Non pagata")
         stato = request.form.get("stato", "BOZZA")
         
-        cliente_id = None
-        cliente_nome = "Cliente Generico"
-        if cliente_id_raw and cliente_id_raw.strip():
-            try:
-                cliente_id = int(cliente_id_raw)
-                cur.execute("SELECT nome FROM clienti WHERE id = %s", (cliente_id,))
-                cliente = cur.fetchone()
-                if cliente:
-                    cliente_nome = cliente["nome"]
-            except ValueError:
-                pass
+        # Regola 2: Se fattura FORNITURA, l'IVA è bloccata al 22%
+        if tipo == "FORNITURA":
+            regime_iva = "22"
+        else:
+            regime_iva = request.form.get("regime_iva", "22")
 
-        cur.execute("""
-            INSERT INTO fatture (numero, data, data_scadenza, cliente_id, cliente_nome, tipo, regime_iva, banca_id, totale, note, stato_pagamento, stato, totale_pagato)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0.0)
-        """, (numero, data, data_scadenza, cliente_id, cliente_nome, tipo, regime_iva, banca_id, totale, note, stato_pagamento, stato))
-        
-        db.commit()
-        cur.close()
-        flash("Fattura creata con successo!", "success")
-        return redirect(url_for("fatture"))
-        
+        try:
+            cur.execute("""
+                INSERT INTO fatture (numero, data, data_scadenza, cliente_id, cliente_nome, tipo, regime_iva, banca_id, totale, note, stato_pagamento, stato, totale_pagato)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0.0)
+            """, (numero, data, data_scadenza, cliente_id, cliente_nome, tipo, regime_iva, banca_id, totale, note, stato_pagamento, stato))
+            db.commit()
+            flash("Fattura creata con successo!", "success")
+            return redirect(url_for("fatture"))
+        except Exception as e:
+            db.rollback()
+            flash(f"Errore durante l'inserimento: {str(e)}", "danger")
+    
     cur.execute("SELECT id, nome FROM clienti ORDER BY nome ASC")
     clienti = cur.fetchall()
     cur.close()
@@ -350,72 +367,84 @@ def vedi_fattura(fattura_id):
 @app.route("/aggiorna_fattura_ajax/<int:fattura_id>", methods=["POST"])
 def aggiorna_fattura_ajax(fattura_id):
     db = get_db()
-    cur = db.cursor()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
-    if request.is_json:
-        data = request.get_json()
-        numero = data.get("numero")
-        data_doc = data.get("data")
-        data_scadenza = data.get("data_scadenza")
-        data_pagamento = data.get("data_pagamento")
-        stato_pagamento = data.get("stato_pagamento")
-        stato = data.get("stato")
-        banca_id = data.get("banca_id")  
-        regime_iva = data.get("regime_iva")
-        note = data.get("note")
-        totale_pagato = data.get("totale_pagato")
-        
-        if stato_pagamento == "Pagata":
-            cur.execute("SELECT totale FROM fatture WHERE id = %s", (fattura_id,))
-            f_tot = cur.fetchone()
-            if f_tot:
-                totale_pagato = f_tot[0]
-        
-        cur.execute("""
-            UPDATE fatture 
-            SET numero=COALESCE(%s, numero), data=COALESCE(%s, data), data_scadenza=COALESCE(%s, data_scadenza),
-                data_pagamento=COALESCE(%s, data_pagamento), stato_pagamento=COALESCE(%s, stato_pagamento), 
-                stato=COALESCE(%s, stato), banca_id=COALESCE(%s, banca_id), regime_iva=COALESCE(%s, regime_iva), 
-                note=%s, totale_pagato=COALESCE(%s, totale_pagato)
-            WHERE id=%s
-        """, (numero, data_doc, data_scadenza, data_pagamento, stato_pagamento, stato, banca_id, regime_iva, note, totale_pagato, fattura_id))
-    else:
-        numero = request.form.get("numero")
-        data_doc = request.form.get("data")
-        data_scadenza = request.form.get("data_scadenza")
-        data_pagamento = request.form.get("data_pagamento")
-        stato_pagamento = request.form.get("stato_pagamento")
-        stato = request.form.get("stato")
-        banca_id = request.form.get("banca_id") 
-        regime_iva = request.form.get("regime_iva")
-        note = request.form.get("note")
-        totale_pagato = request.form.get("totale_pagato")
-        
-        if stato_pagamento == "Pagata":
-            cur.execute("SELECT totale FROM fatture WHERE id = %s", (fattura_id,))
-            f_tot = cur.fetchone()
-            if f_tot:
-                totale_pagato = f_tot[0]
-        else:
-            if totale_pagato is not None:
-                try: totale_pagato = float(totale_pagato)
-                except: totale_pagato = 0.0
+    # Controlliamo lo stato attuale della fattura
+    cur.execute("SELECT stato, tipo FROM fatture WHERE id = %s", (fattura_id,))
+    fattura_attuale = cur.fetchone()
+    if not fattura_attuale:
+        cur.close()
+        if request.is_json:
+            return jsonify({"success": False, "error": "Fattura non trovata"}), 404
+        flash("Fattura non trovata.", "danger")
+        return redirect(url_for("fatture"))
 
-        cur.execute("""
-            UPDATE fatture 
-            SET numero=COALESCE(%s, numero), data=COALESCE(%s, data), data_scadenza=COALESCE(%s, data_scadenza), 
-                data_pagamento=COALESCE(%s, data_pagamento), stato_pagamento=COALESCE(%s, stato_pagamento), 
-                stato=COALESCE(%s, stato), banca_id=COALESCE(%s, banca_id), regime_iva=COALESCE(%s, regime_iva), 
-                note=%s, totale_pagato=COALESCE(%s, totale_pagato)
-            WHERE id=%s
-        """, (numero, data_doc, data_scadenza, data_pagamento, stato_pagamento, stato, banca_id, regime_iva, note, totale_pagato, fattura_id))
+    is_json = request.is_json
+    data = request.get_json() if is_json else request.form
+    
+    # Regola 3: Se CHIUSA, si possono variare SOLO le descrizioni (o note) previo inserimento password
+    if fattura_attuale["stato"] == "CHIUSA":
+        password = data.get("password")
+        if not password or password != PASSWORD_ACCESSO:
+            cur.close()
+            if is_json:
+                return jsonify({"success": False, "error": "La fattura è CHIUSA. Password di sblocco errata o mancante."}), 403
+            flash("Impossibile modificare una fattura CHIUSA senza la password corretta.", "danger")
+            return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
+        
+        # Se la password è corretta ed è CHIUSA, aggiorniamo unicamente le note (campo di testo descrittivo)
+        note = data.get("note")
+        cur.execute("UPDATE fatture SET note = %s WHERE id = %s", (note, fattura_id))
+        db.commit()
+        cur.close()
+        if is_json:
+            return jsonify({"success": True, "message": "Note aggiornate correttamente (Fattura Chiusa)"})
+        flash("Note della fattura chiusa aggiornate con successo.", "success")
+        return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
+
+    # Logica standard se la fattura è APERTA/BOZZA
+    numero = data.get("numero")
+    data_doc = data.get("data")
+    data_scadenza = data.get("data_scadenza")
+    data_pagamento = data.get("data_pagamento")
+    stato_pagamento = data.get("stato_pagamento")
+    stato = data.get("stato")
+    banca_id = data.get("banca_id")  
+    note = data.get("note")
+    totale_pagato = data.get("totale_pagato")
+    
+    # Regola 2 bis: Se il tipo è (o diventa) FORNITURA, sovrascriviamo l'IVA al 22%
+    if fattura_attuale["tipo"] == "FORNITURA" or data.get("tipo") == "FORNITURA":
+        regime_iva = "22"
+    else:
+        regime_iva = data.get("regime_iva")
+
+    if stato_pagamento == "Pagata":
+        cur.execute("SELECT totale FROM fatture WHERE id = %s", (fattura_id,))
+        f_tot = cur.fetchone()
+        if f_tot:
+            totale_pagato = f_tot[0]
+    elif not is_json and totale_pagato is not None:
+        try:
+            totale_pagato = float(totale_pagato)
+        except:
+            totale_pagato = 0.0
+
+    cur.execute("""
+        UPDATE fatture 
+        SET numero=COALESCE(%s, numero), data=COALESCE(%s, data), data_scadenza=COALESCE(%s, data_scadenza),
+            data_pagamento=COALESCE(%s, data_pagamento), stato_pagamento=COALESCE(%s, stato_pagamento), 
+            stato=COALESCE(%s, stato), banca_id=COALESCE(%s, banca_id), regime_iva=COALESCE(%s, regime_iva), 
+            note=%s, totale_pagato=COALESCE(%s, totale_pagato)
+        WHERE id=%s
+    """, (numero, data_doc, data_scadenza, data_pagamento, stato_pagamento, stato, banca_id, regime_iva, note, totale_pagato, fattura_id))
         
     db.commit()
     ricalcola_totale_fattura(cur, fattura_id)
     db.commit()
     cur.close()
     
-    if request.is_json:
+    if is_json:
         return jsonify({"success": True})
     flash("Fattura salvata con successo.", "success")
     return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
@@ -449,6 +478,7 @@ def delete_fattura(fattura_id):
 @app.route("/add_riga", methods=["POST"])
 def add_riga():
     fattura_id = request.form.get("fattura_id")
+    password = request.form.get("password")
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
@@ -456,9 +486,10 @@ def add_riga():
     cur.execute("SELECT stato FROM fatture WHERE id = %s", (fattura_id,))
     f = cur.fetchone()
     if f and f["stato"] == "CHIUSA":
-        cur.close()
-        flash("Impossibile aggiungere righe a una fattura CHIUSA.", "danger")
-        return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
+        if not password or password != PASSWORD_ACCESSO:
+            cur.close()
+            flash("Impossibile aggiungere righe a una fattura CHIUSA senza la password corretta.", "danger")
+            return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
         
     descrizione = request.form.get("descrizione")
     quantita = request.form.get("quantita", 1.0)
@@ -483,18 +514,69 @@ def add_riga():
     return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
 
 
-@app.route("/delete_riga_fattura/<int:riga_id>/<int:fattura_id>")
+@app.route("/aggiorna_riga_fattura/<int:riga_id>", methods=["POST"])
+def aggiorna_riga_fattura(riga_id):
+    """Permette di modificare le righe di una fattura MANUALE (compresa descrizione, quantità, prezzo)."""
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    try:
+        cur.execute("SELECT fattura_id FROM righe_fattura WHERE id = %s", (riga_id,))
+        riga_item = cur.fetchone()
+        if not riga_item:
+            return jsonify({"success": False, "error": "Riga fattura non trovata"}), 404
+            
+        cur.execute("SELECT stato FROM fatture WHERE id = %s", (riga_item["fattura_id"],))
+        f = cur.fetchone()
+
+        data = request.get_json() or {}
+        password = data.get("password")
+
+        # Blocco sicurezza
+        if f and f["stato"] == "CHIUSA":
+            if not password or password != PASSWORD_ACCESSO:
+                return jsonify({"success": False, "error": "La fattura è CHIUSA. Password errata o mancante."}), 403
+
+        try:
+            quantita = float(data.get("quantita", 1.0))
+            prezzo_unitario = float(data.get("prezzo_unitario", 0.0))
+        except (ValueError, TypeError):
+            return jsonify({"success": False, "error": "Formato quantità o prezzo non valido"}), 400
+        
+        descrizione = data.get("descrizione")
+        unita_misura = data.get("unita_misura", "mq")
+
+        cur.execute("""
+            UPDATE righe_fattura 
+            SET quantita = %s, prezzo_unitario = %s, descrizione = COALESCE(%s, descrizione), unita_misura = COALESCE(%s, unita_misura) 
+            WHERE id = %s
+        """, (quantita, prezzo_unitario, descrizione, unita_misura, riga_id))
+        
+        ricalcola_totale_fattura(cur, riga_item["fattura_id"])
+        db.commit()
+        return jsonify({"success": True})
+        
+    except Exception as e:
+        db.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        cur.close()
+
+
+@app.route("/delete_riga_fattura/<int:riga_id>/<int:fattura_id>", methods=["POST", "GET"])
 def delete_riga_fattura(riga_id, fattura_id):
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    
+    password = request.form.get("password") or request.args.get("password")
     
     # Blocco sicurezza
     cur.execute("SELECT stato FROM fatture WHERE id = %s", (fattura_id,))
     f = cur.fetchone()
     if f and f["stato"] == "CHIUSA":
-        cur.close()
-        flash("Impossibile eliminare righe da una fattura CHIUSA.", "danger")
-        return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
+        if not password or password != PASSWORD_ACCESSO:
+            cur.close()
+            flash("Impossibile eliminare righe da una fattura CHIUSA senza la password corretta.", "danger")
+            return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
         
     cur.execute("DELETE FROM righe_fattura WHERE id = %s AND fattura_id = %s", (riga_id, fattura_id))
     ricalcola_totale_fattura(cur, fattura_id)
@@ -504,14 +586,15 @@ def delete_riga_fattura(riga_id, fattura_id):
 
 
 # ==============================================================================
-# 5. GESTIONE DDT & RIGHE DDT (TIPO FORNITURA) - CORRETTO
+# 5. GESTIONE DDT & RIGHE DDT (TIPO FORNITURA)
 # ==============================================================================
 
 @app.route("/add_ddt", methods=["POST"])
 def add_ddt():
     fattura_id = request.form.get("fattura_id")
     numero = request.form.get("numero")
-    data = request.form.get("data")
+    data = request.form.get("data")  
+    password = request.form.get("password")
     
     if not fattura_id:
         flash("ID Fattura mancante.", "danger")
@@ -528,8 +611,9 @@ def add_ddt():
             return redirect(url_for("index"))
             
         if f["stato"] == "CHIUSA":
-            flash("Impossibile aggiungere DDT a una fattura CHIUSA.", "danger")
-            return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
+            if not password or password != PASSWORD_ACCESSO:
+                flash("Impossibile aggiungere DDT a una fattura CHIUSA senza la password corretta.", "danger")
+                return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
             
         cur.execute(
             "INSERT INTO ddt (fattura_id, numero, data) VALUES (%s, %s, %s)", 
@@ -558,10 +642,14 @@ def aggiorna_ddt(ddt_id):
             
         cur.execute("SELECT stato FROM fatture WHERE id = %s", (ddt_item["fattura_id"],))
         f = cur.fetchone()
-        if f and f["stato"] == "CHIUSA":
-            return jsonify({"success": False, "error": "Impossibile modificare DDT di una fattura CHIUSA"}), 403
-                
+        
         data = request.get_json() or {}
+        password = data.get("password")
+
+        if f and f["stato"] == "CHIUSA":
+            if not password or password != PASSWORD_ACCESSO:
+                return jsonify({"success": False, "error": "Impossibile modificare DDT di una fattura CHIUSA senza password."}), 403
+                
         numero = data.get("numero")
         data_ddt = data.get("data")
         
@@ -578,10 +666,13 @@ def aggiorna_ddt(ddt_id):
         cur.close()
 
 
-@app.route("/delete_ddt/<int:ddt_id>/<int:fattura_id>")
+@app.route("/delete_ddt/<int:ddt_id>/<int:fattura_id>", methods=["POST", "GET"])
 def delete_ddt(ddt_id, fattura_id):
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    
+    password = request.form.get("password") or request.args.get("password")
+
     try:
         # Blocco sicurezza
         cur.execute("SELECT stato FROM fatture WHERE id = %s", (fattura_id,))
@@ -591,8 +682,9 @@ def delete_ddt(ddt_id, fattura_id):
             return redirect(url_for("index"))
             
         if f["stato"] == "CHIUSA":
-            flash("Impossibile eliminare DDT da una fattura CHIUSA.", "danger")
-            return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
+            if not password or password != PASSWORD_ACCESSO:
+                flash("Impossibile eliminare DDT da una fattura CHIUSA senza la password corretta.", "danger")
+                return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
             
         cur.execute("DELETE FROM ddt WHERE id = %s AND fattura_id = %s", (ddt_id, fattura_id))
         ricalcola_totale_fattura(cur, fattura_id)
@@ -613,6 +705,7 @@ def add_riga_prodotto():
     prodotto_id = request.form.get("prodotto_id")
     quantita_raw = request.form.get("quantita", 1.0)
     prezzo_override = request.form.get("prezzo_override")
+    password = request.form.get("password")
 
     if not fattura_id or not ddt_id or not prodotto_id:
         return jsonify({"success": False, "error": "Dati obbligatori mancanti"}), 400
@@ -626,7 +719,8 @@ def add_riga_prodotto():
         if not f:
             return jsonify({"success": False, "error": "Fattura non trovata"}), 404
         if f["stato"] == "CHIUSA":
-            return jsonify({"success": False, "error": "Impossibile modificare una fattura CHIUSA"}), 403
+            if not password or password != PASSWORD_ACCESSO:
+                return jsonify({"success": False, "error": "Impossibile modificare una fattura CHIUSA senza password."}), 403
             
         try:
             quantita = float(quantita_raw)
@@ -680,20 +774,27 @@ def aggiorna_riga_ddt(riga_id):
             
         cur.execute("SELECT stato FROM fatture WHERE id = %s", (ddt_item["fattura_id"],))
         f = cur.fetchone()
-        if f and f["stato"] == "CHIUSA":
-            return jsonify({"success": False, "error": "Impossibile modificare prodotti di una fattura CHIUSA"}), 403
 
         data = request.get_json() or {}
+        password = data.get("password")
+
+        if f and f["stato"] == "CHIUSA":
+            if not password or password != PASSWORD_ACCESSO:
+                return jsonify({"success": False, "error": "Impossibile modificare prodotti di una fattura CHIUSA senza password."}), 403
+
         try:
             quantita = float(data.get("quantita", 1.0))
             prezzo = float(data.get("prezzo", 0.0))
         except (ValueError, TypeError):
-            return jsonify({"success": False, "error": "Formato quantita o prezzo non valido"}), 400
+            return jsonify({"success": False, "error": "Formato quantità o prezzo non valido"}), 400
         
-        cur.execute(
-            "UPDATE righe_ddt SET quantita = %s, prezzo = %s WHERE id = %s RETURNING ddt_id", 
-            (quantita, prezzo, riga_id)
-        )
+        descrizione = data.get("descrizione")
+
+        cur.execute("""
+            UPDATE righe_ddt 
+            SET quantita = %s, prezzo = %s, descrizione = COALESCE(%s, descrizione) 
+            WHERE id = %s RETURNING ddt_id
+        """, (quantita, prezzo, descrizione, riga_id))
         ddt_id = cur.fetchone()["ddt_id"]
         
         cur.execute("SELECT fattura_id FROM ddt WHERE id = %s", (ddt_id,))
@@ -709,23 +810,29 @@ def aggiorna_riga_ddt(riga_id):
     finally:
         cur.close()
 
-@app.route("/delete_riga_ddt/<int:riga_id>/<int:fattura_id>")
+
+@app.route("/delete_riga_ddt/<int:riga_id>/<int:fattura_id>", methods=["POST", "GET"])
 def delete_riga_ddt(riga_id, fattura_id):
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    
+    password = request.form.get("password") or request.args.get("password")
     
     # Blocco sicurezza
     cur.execute("SELECT stato FROM fatture WHERE id = %s", (fattura_id,))
     f = cur.fetchone()
     if f and f["stato"] == "CHIUSA":
-        cur.close()
-        flash("Impossibile eliminare prodotti da una fattura CHIUSA.", "danger")
-        return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
+        if not password or password != PASSWORD_ACCESSO:
+            cur.close()
+            return jsonify({"success": False, "error": "Impossibile eliminare prodotti da una fattura CHIUSA senza password."}), 403
         
     cur.execute("DELETE FROM righe_ddt WHERE id = %s", (riga_id,))
     ricalcola_totale_fattura(cur, fattura_id)
     db.commit()
     cur.close()
+    
+    if request.is_json or request.method == "POST":
+        return jsonify({"success": True})
     return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
 
 
@@ -756,11 +863,11 @@ def genera_pdf(fattura_id):
         cur.execute("SELECT * FROM clienti WHERE id = %s", (f["cliente_id"],))
         cliente = cur.fetchone()
         
-    # 3. Recupera i dati dell'azienda (Cedente - I tuoi dati)
+    # 3. Recupera i dati dell'azienda (Cedente)
     cur.execute("SELECT * FROM azienda LIMIT 1")
     azienda = cur.fetchone()
     
-    # Se la tabella azienda è vuota nel database, creiamo dati di fallback per non mostrare righe vuote
+    # Se la tabella azienda è vuota nel database, creiamo dati di fallback
     if not azienda:
         azienda = {
             "nome": "La Tua Ditta S.r.l.",
@@ -771,7 +878,7 @@ def genera_pdf(fattura_id):
             "email": "info@lazuaditta.it"
         }
         
-    # 4. Associa i dettagli della banca selezionata per le coordinate bancarie
+    # 4. Associa i dettagli della banca selezionata
     banca_selezionata = None
     elenco_banche = {
         "BPER": "BPER Banca - IT35S0538730600000004332185",
@@ -833,10 +940,10 @@ def genera_pdf(fattura_id):
         imponibile=valore_imponibile,
         iva=valore_iva,
         totale=valore_totale,
-        autoprint=False # Non serve più la stampa del browser
+        autoprint=False
     )
-    
-    # 8. Genera il PDF con xhtml2pdf
+
+    # 8. Genera il PDF in memoria e restituiscilo al client
     pdf_buffer = io.BytesIO()
     pisa_status = pisa.CreatePDF(io.BytesIO(html.encode("utf-8")), dest=pdf_buffer)
     
@@ -844,6 +951,11 @@ def genera_pdf(fattura_id):
         return "Errore durante la generazione del PDF", 500
         
     pdf_buffer.seek(0)
+    response = make_response(pdf_buffer.read())
+    response.headers['Content-Type'] = 'application/pdf'
+    filename = f"Fattura_{f['numero']}_{f['data']}.pdf".replace(" ", "_")
+    response.headers['Content-Disposition'] = f'inline; filename={filename}'
+    return response
     
     # 9. Prepara la risposta con il nome file personalizzato (es: Fattura4_prova1.pdf)
     nome_cliente_pulito = (f["cliente_nome"] or "generico").replace(" ", "").strip()
