@@ -28,9 +28,6 @@ def init_db():
         db = get_db()
         cur = db.cursor()
         
-        # RIGA TEMPORANEA: Cancella la vecchia tabella per ricrearla con i campi nuovi
-        cur.execute("DROP TABLE IF EXISTS clienti CASCADE;")
-        
         # Tabella Clienti Completa
         cur.execute("""
             CREATE TABLE IF NOT EXISTS clienti (
@@ -114,6 +111,12 @@ def nuova_fattura():
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
+    # Definiamo la lista delle banche da passare all'HTML
+    elenco_banche = [
+        {"id": "BPER", "nome": "BPER Banca di Luserna San Giovanni - IT35S0538730600000004332185"},
+        {"id": "POSTE", "nome": "Poste Italiane - IT04B0760110200001078221247"}
+    ]
+    
     if request.method == "POST":
         numero = request.form.get("numero")
         data = request.form.get("data")
@@ -124,26 +127,37 @@ def nuova_fattura():
         note = request.form.get("note")
         stato_pagamento = request.form.get("stato_pagamento", "Non pagata")
         stato = request.form.get("stato", "BOZZA")
+        banca_id = request.form.get("banca_id") # Prende la banca scelta
         
+        # Recupera il nome del cliente
         cur.execute("SELECT nome FROM clienti WHERE id = %s", (cliente_id,))
         cliente = cur.fetchone()
         cliente_nome = cliente["nome"] if cliente else "Cliente Generico"
         
+        # Se vuoi salvare le info sulla banca nelle note o in un campo, per ora le accodiamo alle note della fattura
+        info_banca = "Banca accredito: BPER" if banca_id == "BPER" else "Banca accredito: Poste Italiane"
+        note_finali = f"{note}\n{info_banca}" if note else info_banca
+
         cur.execute("""
             INSERT INTO fatture (numero, data, data_scadenza, cliente_id, cliente_nome, tipo, totale, note, stato_pagamento, stato)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (numero, data, data_scadenza, cliente_id, cliente_nome, tipo, totale, note, stato_pagamento, stato))
+        """, (numero, data, data_scadenza, cliente_id, cliente_nome, tipo, totale, note_finali, stato_pagamento, stato))
         
         db.commit()
         cur.close()
         flash("Fattura creata con successo!", "success")
         return redirect(url_for("fatture"))
         
+    # GET: Recupera i clienti per i bottoni
     cur.execute("SELECT id, nome FROM clienti ORDER BY nome ASC")
     clienti = cur.fetchall()
     cur.close()
-    return render_template("nuova_fattura.html", clienti=clienti)
-
+    
+    # Genera la data di oggi nel formato corretto per l'HTML (AAAA-MM-GG)
+    from datetime import datetime
+    data_oggi = datetime.now().strftime("%Y-%m-%d")
+    
+    return render_template("nuova_fattura.html", clienti=clienti, banche=elenco_banche, data_oggi=data_oggi)
 
 @app.route("/fattura/<int:fattura_id>")
 def vedi_fattura(fattura_id):
@@ -231,6 +245,48 @@ def delete_cliente(cliente_id):
     return redirect(url_for("clienti"))
 
 
+# --- SEZIONE PRODOTTI (AGGIORNATA) ---
+
+@app.route("/prodotti", methods=["GET", "POST"])
+def prodotti():
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    
+    if request.method == "POST":
+        nome = request.form.get("nome")
+        prezzo = request.form.get("prezzo", 0.0)
+        
+        # Converte il prezzo in float se presente
+        try:
+            prezzo = float(prezzo)
+        except:
+            prezzo = 0.0
+            
+        cur.execute("""
+            INSERT INTO prodotti (nome, prezzo)
+            VALUES (%s, %s)
+        """, (nome, prezzo))
+        db.commit()
+        flash("Prodotto aggiunto con successo!", "success")
+        return redirect(url_for("prodotti"))
+
+    cur.execute("SELECT * FROM prodotti ORDER BY nome ASC")
+    elenco_prodotti = cur.fetchall()
+    cur.close()
+    return render_template("prodotti.html", prodotti=elenco_prodotti)
+
+
+@app.route("/delete_prodotto/<int:prodotto_id>")
+def delete_prodotto(prodotto_id):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("DELETE FROM prodotti WHERE id = %s", (prodotto_id,))
+    db.commit()
+    cur.close()
+    flash("Prodotto eliminato con successo.", "success")
+    return redirect(url_for("prodotti"))
+
+
 # --- DASHBOARD ANALISI ---
 
 @app.route("/dashboard")
@@ -293,17 +349,7 @@ def dashboard():
     )
 
 
-# --- PRODOTTI, NOTE e LOGOUT ---
-
-@app.route("/prodotti")
-def prodotti():
-    db = get_db()
-    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    cur.execute("SELECT * FROM prodotti ORDER BY nome ASC")
-    elenco_prodotti = cur.fetchall()
-    cur.close()
-    return render_template("prodotti.html", prodotti=elenco_prodotti)
-
+# --- NOTE e LOGOUT ---
 
 @app.route("/note")
 def note():
