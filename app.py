@@ -28,7 +28,7 @@ def init_db():
         db = get_db()
         cur = db.cursor()
         
-        # Tabella Clienti Completa
+        # Tabella Clienti
         cur.execute("""
             CREATE TABLE IF NOT EXISTS clienti (
                 id SERIAL PRIMARY KEY,
@@ -55,16 +55,16 @@ def init_db():
                 note TEXT,
                 stato_pagamento TEXT CHECK(stato_pagamento IN ('Non pagata', 'In attesa', 'Pagata')) DEFAULT 'Non pagata',
                 stato TEXT CHECK(stato IN ('BOZZA', 'CHIUSA')) DEFAULT 'BOZZA',
-                FOREIGN KEY (cliente_id) REFERENCES clienti(id)
+                FOREIGN KEY (cliente_id) REFERENCES clienti(id) ON DELETE SET NULL
             )
         """)
         
-        # Tabella Prodotti
+        # Tabella Prodotti (Usiamo 'prezzo_base' per allinearci al tuo HTML)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS prodotti (
                 id SERIAL PRIMARY KEY,
                 nome TEXT NOT NULL,
-                prezzo REAL DEFAULT 0.0
+                prezzo_base REAL DEFAULT 0.0
             )
         """)
         
@@ -111,7 +111,6 @@ def nuova_fattura():
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
-    # Definiamo la lista delle banche da passare all'HTML
     elenco_banche = [
         {"id": "BPER", "nome": "BPER Banca di Luserna San Giovanni - IT35S0538730600000004332185"},
         {"id": "POSTE", "nome": "Poste Italiane - IT04B0760110200001078221247"}
@@ -121,20 +120,27 @@ def nuova_fattura():
         numero = request.form.get("numero")
         data = request.form.get("data")
         data_scadenza = request.form.get("data_scadenza")
-        cliente_id = request.form.get("cliente_id")
+        cliente_id_raw = request.form.get("cliente_id")
         tipo = request.form.get("tipo", "MANUALE")
         totale = request.form.get("totale", 0.0)
         note = request.form.get("note")
         stato_pagamento = request.form.get("stato_pagamento", "Non pagata")
         stato = request.form.get("stato", "BOZZA")
-        banca_id = request.form.get("banca_id") # Prende la banca scelta
+        banca_id = request.form.get("banca_id")
         
-        # Recupera il nome del cliente
-        cur.execute("SELECT nome FROM clienti WHERE id = %s", (cliente_id,))
-        cliente = cur.fetchone()
-        cliente_nome = cliente["nome"] if cliente else "Cliente Generico"
+        # Conversione e validazione sicura del cliente_id
+        cliente_id = None
+        cliente_nome = "Cliente Generico"
+        if cliente_id_raw and cliente_id_raw.strip():
+            try:
+                cliente_id = int(cliente_id_raw)
+                cur.execute("SELECT nome FROM clienti WHERE id = %s", (cliente_id,))
+                cliente = cur.fetchone()
+                if cliente:
+                    cliente_nome = cliente["nome"]
+            except ValueError:
+                pass
         
-        # Se vuoi salvare le info sulla banca nelle note o in un campo, per ora le accodiamo alle note della fattura
         info_banca = "Banca accredito: BPER" if banca_id == "BPER" else "Banca accredito: Poste Italiane"
         note_finali = f"{note}\n{info_banca}" if note else info_banca
 
@@ -148,16 +154,15 @@ def nuova_fattura():
         flash("Fattura creata con successo!", "success")
         return redirect(url_for("fatture"))
         
-    # GET: Recupera i clienti per i bottoni
     cur.execute("SELECT id, nome FROM clienti ORDER BY nome ASC")
     clienti = cur.fetchall()
     cur.close()
     
-    # Genera la data di oggi nel formato corretto per l'HTML (AAAA-MM-GG)
     from datetime import datetime
     data_oggi = datetime.now().strftime("%Y-%m-%d")
     
     return render_template("nuova_fattura.html", clienti=clienti, banche=elenco_banche, data_oggi=data_oggi)
+
 
 @app.route("/fattura/<int:fattura_id>")
 def vedi_fattura(fattura_id):
@@ -245,7 +250,7 @@ def delete_cliente(cliente_id):
     return redirect(url_for("clienti"))
 
 
-# --- SEZIONE PRODOTTI (AGGIORNATA) ---
+# --- SEZIONE PRODOTTI ---
 
 @app.route("/prodotti", methods=["GET", "POST"])
 def prodotti():
@@ -254,18 +259,19 @@ def prodotti():
     
     if request.method == "POST":
         nome = request.form.get("nome")
-        prezzo = request.form.get("prezzo", 0.0)
+        prezzo_base = request.form.get("prezzo_base")
+        if not prezzo_base:
+            prezzo_base = request.form.get("prezzo", 0.0) # Fallback se usasse ancora 'prezzo'
         
-        # Converte il prezzo in float se presente
         try:
-            prezzo = float(prezzo)
+            prezzo_base = float(prezzo_base)
         except:
-            prezzo = 0.0
+            prezzo_base = 0.0
             
         cur.execute("""
-            INSERT INTO prodotti (nome, prezzo)
+            INSERT INTO prodotti (nome, prezzo_base)
             VALUES (%s, %s)
-        """, (nome, prezzo))
+        """, (nome, prezzo_base))
         db.commit()
         flash("Prodotto aggiunto con successo!", "success")
         return redirect(url_for("prodotti"))
