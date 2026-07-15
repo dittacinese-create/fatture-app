@@ -41,7 +41,7 @@ def init_db():
             )
         """)
         
-        # Tabella Fatture
+        # Tabella Fatture (Estesa al massimo per coprire ogni variabile richiamata nel dettaglio)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS fatture (
                 id SERIAL PRIMARY KEY,
@@ -51,6 +51,8 @@ def init_db():
                 cliente_id INTEGER,
                 cliente_nome TEXT,
                 tipo TEXT CHECK(tipo IN ('FORNITURA', 'MANUALE')) DEFAULT 'MANUALE',
+                regime_iva TEXT DEFAULT '22',
+                banca_id TEXT,
                 totale REAL DEFAULT 0.0,
                 note TEXT,
                 stato_pagamento TEXT CHECK(stato_pagamento IN ('Non pagata', 'In attesa', 'Pagata')) DEFAULT 'Non pagata',
@@ -59,15 +61,28 @@ def init_db():
             )
         """)
         
-        # FORZIAMO IL RESET DELLA TABELLA PRODOTTI PER AGGIORNARE LE COLONNE
-        cur.execute("DROP TABLE IF EXISTS prodotti CASCADE;")
+        # Tabella Righe Fattura (Elemento critico: indispensabile per non far fallire la visualizzazione)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS righe_fattura (
+                id SERIAL PRIMARY KEY,
+                fattura_id INTEGER NOT NULL,
+                prodotto_id INTEGER,
+                descrizione TEXT,
+                quantita REAL DEFAULT 1.0,
+                prezzo_unitario REAL DEFAULT 0.0,
+                unita_misura TEXT DEFAULT 'mq',
+                FOREIGN KEY (fattura_id) REFERENCES fatture(id) ON DELETE CASCADE
+            )
+        """)
         
-        # Ricreiamo la Tabella Prodotti con la colonna corretta allineata al tuo HTML
+        # FORZIAMO RESET della tabella prodotti per registrare la colonna unita_misura pulita
+        cur.execute("DROP TABLE IF EXISTS prodotti CASCADE;")
         cur.execute("""
             CREATE TABLE IF NOT EXISTS prodotti (
                 id SERIAL PRIMARY KEY,
                 nome TEXT NOT NULL,
-                prezzo_base REAL DEFAULT 0.0
+                prezzo_base REAL DEFAULT 0.0,
+                unita_misura TEXT DEFAULT 'mq'
             )
         """)
         
@@ -125,11 +140,12 @@ def nuova_fattura():
         data_scadenza = request.form.get("data_scadenza")
         cliente_id_raw = request.form.get("cliente_id")
         tipo = request.form.get("tipo", "MANUALE")
+        regime_iva = request.form.get("regime_iva", "22")
+        banca_id = request.form.get("banca_id")
         totale = request.form.get("totale", 0.0)
         note = request.form.get("note")
         stato_pagamento = request.form.get("stato_pagamento", "Non pagata")
         stato = request.form.get("stato", "BOZZA")
-        banca_id = request.form.get("banca_id")
         
         cliente_id = None
         cliente_nome = "Cliente Generico"
@@ -147,9 +163,9 @@ def nuova_fattura():
         note_finali = f"{note}\n{info_banca}" if note else info_banca
 
         cur.execute("""
-            INSERT INTO fatture (numero, data, data_scadenza, cliente_id, cliente_nome, tipo, totale, note, stato_pagamento, stato)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (numero, data, data_scadenza, cliente_id, cliente_nome, tipo, totale, note_finali, stato_pagamento, stato))
+            INSERT INTO fatture (numero, data, data_scadenza, cliente_id, cliente_nome, tipo, regime_iva, banca_id, totale, note, stato_pagamento, stato)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (numero, data, data_scadenza, cliente_id, cliente_nome, tipo, regime_iva, banca_id, totale, note_finali, stato_pagamento, stato))
         
         db.commit()
         cur.close()
@@ -171,7 +187,6 @@ def vedi_fattura(fattura_id):
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
-    # Recupera la fattura
     cur.execute("SELECT * FROM fatture WHERE id = %s", (fattura_id,))
     f = cur.fetchone()
     
@@ -180,14 +195,23 @@ def vedi_fattura(fattura_id):
         flash("Fattura non trovata.", "danger")
         return redirect(url_for("fatture"))
         
-    # Recupera in modo sicuro i dettagli del cliente associato se esiste
     cliente = None
     if f["cliente_id"]:
         cur.execute("SELECT * FROM clienti WHERE id = %s", (f["cliente_id"],))
         cliente = cur.fetchone()
+    
+    # Recuperiamo anche le eventuali righe/articoli collegate per il template
+    cur.execute("SELECT * FROM righe_fattura WHERE fattura_id = %s", (fattura_id,))
+    righe = cur.fetchall()
         
     cur.close()
-    return render_template("fattura_dettaglio.html", f=f, cliente=cliente)
+    
+    # Dizionario di fallback protetto da errori jinja2
+    fattura_dict = dict(f)
+    if "regime_iva" not in fattura_dict: fattura_dict["regime_iva"] = "22"
+    if "banca_id" not in fattura_dict: fattura_dict["banca_id"] = "BPER"
+        
+    return render_template("fattura_dettaglio.html", f=fattura_dict, cliente=cliente, righe=righe)
 
 
 @app.route("/delete_fattura/<int:fattura_id>")
@@ -230,39 +254,6 @@ def clienti():
     return render_template("clienti.html", clienti=elenco_clienti)
 
 
-@app.route("/modifica_cliente/<int:cliente_id>", methods=["POST"])
-def modifica_cliente(cliente_id):
-    db = get_db()
-    cur = db.cursor()
-    
-    nome = request.form.get("nome")
-    indirizzo = request.form.get("indirizzo")
-    partita_iva = request.form.get("partita_iva")
-    codice_fiscale = request.form.get("codice_fiscale")
-    codice_sdi = request.form.get("codice_sdi")
-    pec = request.form.get("pec")
-    
-    cur.execute("""
-        UPDATE clienti 
-        SET nome=%s, indirizzo=%s, partita_iva=%s, codice_fiscale=%s, codice_sdi=%s, pec=%s
-        WHERE id=%s
-    """, (nome, indirizzo, partita_iva, codice_fiscale, codice_sdi, pec, cliente_id))
-    db.commit()
-    cur.close()
-    return jsonify({"success": True})
-
-
-@app.route("/delete_cliente/<int:cliente_id>")
-def delete_cliente(cliente_id):
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("DELETE FROM clienti WHERE id = %s", (cliente_id,))
-    db.commit()
-    cur.close()
-    flash("Cliente eliminato con successo.", "success")
-    return redirect(url_for("clienti"))
-
-
 # --- SEZIONE PRODOTTI ---
 
 @app.route("/prodotti", methods=["GET", "POST"])
@@ -272,9 +263,8 @@ def prodotti():
     
     if request.method == "POST":
         nome = request.form.get("nome")
-        prezzo_base = request.form.get("prezzo_base")
-        if not prezzo_base:
-            prezzo_base = request.form.get("prezzo", 0.0)
+        prezzo_base = request.form.get("prezzo_base", 0.0)
+        unita_misura = request.form.get("unita_misura", "mq")
         
         try:
             prezzo_base = float(prezzo_base)
@@ -282,9 +272,9 @@ def prodotti():
             prezzo_base = 0.0
             
         cur.execute("""
-            INSERT INTO prodotti (nome, prezzo_base)
-            VALUES (%s, %s)
-        """, (nome, prezzo_base))
+            INSERT INTO prodotti (nome, prezzo_base, unita_misura)
+            VALUES (%s, %s, %s)
+        """, (nome, prezzo_base, unita_misura))
         db.commit()
         flash("Prodotto aggiunto con successo!", "success")
         return redirect(url_for("prodotti"))
@@ -293,6 +283,26 @@ def prodotti():
     elenco_prodotti = cur.fetchall()
     cur.close()
     return render_template("prodotti.html", prodotti=elenco_prodotti)
+
+
+@app.route("/modifica_prodotto/<int:prodotto_id>", methods=["POST"])
+def modifica_prodotto(prodotto_id):
+    db = get_db()
+    cur = db.cursor()
+    data = request.get_json()
+    
+    nome = data.get("nome")
+    prezzo_base = data.get("prezzo_base", 0.0)
+    unita_misura = data.get("unita_misura", "mq")
+    
+    cur.execute("""
+        UPDATE prodotti 
+        SET nome=%s, prezzo_base=%s, unita_misura=%s
+        WHERE id=%s
+    """, (nome, prezzo_base, unita_misura, prodotto_id))
+    db.commit()
+    cur.close()
+    return jsonify({"success": True})
 
 
 @app.route("/delete_prodotto/<int:prodotto_id>")
