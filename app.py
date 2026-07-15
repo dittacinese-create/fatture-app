@@ -585,23 +585,30 @@ def delete_riga_fattura(riga_id, fattura_id):
     cur.close()
     return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
 
-@app.route('/riapri_fattura/<int:id>', methods=['POST'])
+@app.route("/riapri_fattura/<int:id>", methods=["POST"])
 def riapri_fattura(id):
-    data = request.get_json()
+    data = request.get_json() or {}
     password_inserita = data.get("password")
 
-    # Verifica la password usando la variabile di config
+    # Verifica la password usando la costante globale del tuo file app.py
     if password_inserita != PASSWORD_ACCESSO:
         return jsonify({"success": False, "error": "Password errata"}), 403
 
-    # Recupera la fattura
-    fattura = Fattura.query.get_or_404(id)
-    
-    # CORREZIONE: Imposta lo stato a 'BOZZA', non a 'APERTA'
-    fattura.stato = 'BOZZA' 
-    
-    db.session.commit()
-    return jsonify({"success": True, "message": "Fattura sbloccata con successo!"})
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    try:
+        # Riporta lo stato a BOZZA
+        cur.execute(
+            "UPDATE fatture SET stato = 'BOZZA' WHERE id = %s", 
+            (id,)
+        )
+        db.commit()
+        return jsonify({"success": True, "message": "Fattura sbloccata con successo!"})
+    except Exception as e:
+        db.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        cur.close()
 
 # ==============================================================================
 # 5. GESTIONE DDT & RIGHE DDT (TIPO FORNITURA)
