@@ -1170,7 +1170,81 @@ def dashboard():
 # ==============================================================================
 # 10.NOTE 
 # ==============================================================================
+@app.route("/nota/<int:id>")
+def get_nota_api(id):
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    cur.execute("SELECT * FROM note WHERE id = %s", (id,))
+    nota = cur.fetchone()
+    cur.close()
+    
+    if not nota:
+        return jsonify({"error": "Nota non trovata"}), 404
+        
+    return jsonify({
+        "id": nota["id"],
+        "titolo": nota["titolo"],
+        "contenuto": nota["contenuto"]
+    })
 
+
+@app.route("/salva_nota/<int:id>", methods=["POST"])
+def salva_nota_api(id):
+    data = request.get_json() or {}
+    titolo = data.get("titolo", "").strip()
+    contenuto = data.get("contenuto", "")
+
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("""
+            UPDATE note 
+            SET titolo = %s, contenuto = %s, data_modifica = CURRENT_DATE::TEXT 
+            WHERE id = %s
+        """, (titolo if titolo else "Senza titolo", contenuto, id))
+        db.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        db.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        cur.close()
+
+
+@app.route("/nuova_nota", methods=["POST"])
+def nuova_nota_api():
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    try:
+        cur.execute("""
+            INSERT INTO note (titolo, contenuto, data_creazione, data_modifica) 
+            VALUES ('Senza titolo', '', CURRENT_DATE::TEXT, CURRENT_DATE::TEXT) 
+            RETURNING id
+        """)
+        nuovo_id = cur.fetchone()["id"]
+        db.commit()
+        return jsonify({"success": True, "id": nuovo_id})
+    except Exception as e:
+        db.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        cur.close()
+
+
+@app.route("/elimina_nota/<int:id>", methods=["POST"])
+def elimina_nota_api(id):
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("DELETE FROM note WHERE id = %s", (id,))
+        db.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        db.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        cur.close()
+        
 @app.route("/note")
 def note_page():
     db = get_db()
@@ -1207,12 +1281,14 @@ def note_page():
     # -----------------------------------------------
 
     # Ora esegui la query sicura delle note
+    # Sostituisci la query precedente con questa:
     cur.execute("""
         SELECT id, titolo, contenuto, 
-               COALESCE(data_modifica, data_creazione) as data_modifica 
+               COALESCE(data_modifica::TEXT, data_creazione::TEXT) as data_modifica 
         FROM note 
         ORDER BY id DESC
     """)
+
     elenco_note = cur.fetchall()
     cur.close()
     return render_template("note.html", note=elenco_note)
