@@ -1132,7 +1132,7 @@ def dashboard():
         cur.execute("ALTER TABLE fatture DROP CONSTRAINT IF EXISTS fatture_stato_pagamento_check;")
         cur.execute("""
             ALTER TABLE fatture ADD CONSTRAINT fatture_stato_pagamento_check 
-            CHECK (stato_pagamento IN ('Pagato', 'Non Pagato', 'Parziale', 'Parzialmente Pagato'));
+            CHECK (stato_pagamento IN ('Pagato', 'Non Pagato', 'Parziale', 'Parzialmente Pagato', 'Pagata', 'Non pagata'));
         """)
         db.commit()
     except Exception:
@@ -1152,7 +1152,6 @@ def dashboard():
     default_inizio = f"{anno_corrente}-01-01"
     default_fine = f"{anno_corrente}-12-31"
 
-    # Se l'utente non ha premuto "Filtra" ed è il primo accesso, o se ha premuto "Azzera"
     if 'inizio' not in request.args or request.args.get('azzera'):
         filtro_inizio = default_inizio
         filtro_fine = default_fine
@@ -1166,7 +1165,8 @@ def dashboard():
         filtro_cliente = request.args.get('cliente', '').strip()
         filtro_stato = request.args.get('stato_pagamento', '').strip()
 
-    # --- QUERY ---
+    # --- QUERY CON INTERPRETAZIONE FORMATO DATA GG/MM/AAAA ---
+    # Usiamo TO_DATE per convertire le stringhe 'DD/MM/YYYY' memorizzate nel database in date reali confrontabili
     query = """
         SELECT f.*, 
                COALESCE(c.nome, f.cliente) as cliente_nome
@@ -1177,10 +1177,10 @@ def dashboard():
     params = []
 
     if filtro_inizio:
-        query += " AND f.data_fattura >= %s"
+        query += " AND TO_DATE(f.data_fattura, 'DD/MM/YYYY') >= TO_DATE(%s, 'YYYY-MM-DD')"
         params.append(filtro_inizio)
     if filtro_fine:
-        query += " AND f.data_fattura <= %s"
+        query += " AND TO_DATE(f.data_fattura, 'DD/MM/YYYY') <= TO_DATE(%s, 'YYYY-MM-DD')"
         params.append(filtro_fine)
     if filtro_tipo:
         query += " AND UPPER(f.tipologia) = UPPER(%s)"
@@ -1189,8 +1189,14 @@ def dashboard():
         query += " AND (COALESCE(c.nome, f.cliente) ILIKE %s)"
         params.append(f"%{filtro_cliente}%")
     if filtro_stato:
-        query += " AND f.stato_pagamento = %s"
-        params.append(filtro_stato)
+        # Uniformiamo il controllo dello stato di pagamento per includere variazioni di genere (Pagato/Pagata)
+        if filtro_stato.lower() in ['pagato', 'pagata']:
+            query += " AND f.stato_pagamento ILIKE 'pagat%'"
+        elif filtro_stato.lower() in ['non pagato', 'non pagata']:
+            query += " AND f.stato_pagamento ILIKE 'non pagat%'"
+        else:
+            query += " AND f.stato_pagamento = %s"
+            params.append(filtro_stato)
 
     query += " ORDER BY f.id ASC"
 
@@ -1215,9 +1221,9 @@ def dashboard():
             totale_generale += importo_val
             
             stato_pag = str(f.get('stato_pagamento') or '').strip().lower()
-            if stato_pag == 'pagato':
+            if stato_pag in ['pagato', 'pagata']:
                 totale_pagato += importo_val
-            elif stato_pag in ['parziale', 'parzialmente pagato']:
+            elif stato_pag in ['parziale', 'parzialmente pagato', 'parzialmente pagata']:
                 gia_pagato = f.get('totale_pagato') or f.get('importo_pagato') or 0
                 try:
                     gia_pagato_float = float(gia_pagato)
