@@ -670,11 +670,15 @@ def delete_riga_ddt(riga_id, fattura_id):
 
 
 # ==============================================================================
-# 6. ESPORTAZIONE PDF (CORRETTA)
+# 6. ESPORTAZIONE PDF (GENERAZIONE E DOWNLOAD DIRETTO)
 # ==============================================================================
 
 @app.route("/pdf/<int:fattura_id>")
 def genera_pdf(fattura_id):
+    import io
+    from xhtml2pdf import pisa
+    from flask import make_response
+
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
@@ -686,17 +690,37 @@ def genera_pdf(fattura_id):
         cur.close()
         return "Errore: Fattura non trovata.", 404
         
-    # 2. Recupera i dati del cliente
+    # 2. Recupera i dati del cliente (Cessionario)
     cliente = None
     if f["cliente_id"]:
         cur.execute("SELECT * FROM clienti WHERE id = %s", (f["cliente_id"],))
         cliente = cur.fetchone()
         
-    # 3. Recupera l'azienda
+    # 3. Recupera i dati dell'azienda (Cedente - I tuoi dati)
     cur.execute("SELECT * FROM azienda LIMIT 1")
     azienda = cur.fetchone()
+    
+    # Se la tabella azienda è vuota nel database, creiamo dati di fallback per non mostrare righe vuote
+    if not azienda:
+        azienda = {
+            "nome": "La Tua Ditta S.r.l.",
+            "indirizzo": "Via Roma 123, Torino (TO)",
+            "partita_iva": "IT12345678901",
+            "codice_fiscale": "12345678901",
+            "telefono": "+39 011 123456",
+            "email": "info@lazuaditta.it"
+        }
         
-    # 4. Recupera ddt e righe in base al tipo
+    # 4. Associa i dettagli della banca selezionata per le coordinate bancarie
+    banca_selezionata = None
+    elenco_banche = {
+        "BPER": "BPER Banca - IT35S0538730600000004332185",
+        "POSTE": "Poste Italiane - IT04B0760110200001078221247"
+    }
+    if f["banca_id"] in elenco_banche:
+        banca_selezionata = elenco_banche[f["banca_id"]]
+        
+    # 5. Recupera ddt e righe in base al tipo
     ddt_list = []
     righe_ddt = []
     righe = []
@@ -726,7 +750,7 @@ def genera_pdf(fattura_id):
             
     cur.close()
 
-    # 5. Calcoli economici
+    # 6. Calcoli economici
     valore_totale = f.get("totale", 0.0) or 0.0
     try:
         aliquota = float(f["regime_iva"])
@@ -736,20 +760,41 @@ def genera_pdf(fattura_id):
     valore_imponibile = valore_totale / (1 + (aliquota / 100.0))
     valore_iva = valore_totale - valore_imponibile
 
-    # 6. Rendering del file TEMPLATE REALE della tua app: "pdf_fattura.html"
-    return render_template(
+    # 7. Renderizza l'HTML del template
+    html = render_template(
         "pdf_fattura.html", 
         fattura=dict(f),
         cliente=cliente,
         azienda=azienda,
+        banca_selezionata=banca_selezionata,
         ddt_list=ddt_list,
         righe_ddt=righe_ddt,
         righe=righe,
         imponibile=valore_imponibile,
         iva=valore_iva,
         totale=valore_totale,
-        autoprint=True
+        autoprint=False # Non serve più la stampa del browser
     )
+    
+    # 8. Genera il PDF con xhtml2pdf
+    pdf_buffer = io.BytesIO()
+    pisa_status = pisa.CreatePDF(io.BytesIO(html.encode("utf-8")), dest=pdf_buffer)
+    
+    if pisa_status.err:
+        return "Errore durante la generazione del PDF", 500
+        
+    pdf_buffer.seek(0)
+    
+    # 9. Prepara la risposta con il nome file personalizzato (es: Fattura4_prova1.pdf)
+    nome_cliente_pulito = (f["cliente_nome"] or "generico").replace(" ", "").strip()
+    numero_fattura_pulito = (f["numero"] or str(fattura_id)).replace("/", "-").strip()
+    filename = f"Fattura{numero_fattura_pulito}_{nome_cliente_pulito}.pdf"
+    
+    response = make_response(pdf_buffer.getvalue())
+    response.headers['Content-Type'] = 'application/pdf'
+    response.headers['Content-Disposition'] = f'attachment; filename={filename}'
+    
+    return response
 
 
 # ==============================================================================

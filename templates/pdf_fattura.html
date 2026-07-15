@@ -60,20 +60,31 @@
         <td>
             <div class="label-parte">CEDENTE / PRESTATORE</div>
             <div class="info-parte">
-                {{ azienda.ragione_sociale }}<br>
-                {{ azienda.indirizzo }}<br>
-                P.IVA {{ azienda.partita_iva }}<br>
-                C.F. {{ azienda.codice_fiscale }}
+                <strong>{{ SHI MEIYE }}</strong><br>
+                {{ Via Vigne di Spagna SNC - 12032 Barge CN }}<br>
+                P.IVA: {{ 04136510049 }}<br>
+                C.F. {{ SHIMYE66H54Z210G }}<br>
             </div>
         </td>
         <td class="right">
             <div class="label-parte">CESSIONARIO / COMMITTENTE</div>
             <div class="info-parte">
-                {{ fattura.cliente_nome }}<br>
-                {{ fattura.cliente_indirizzo }}<br>
-                P.IVA e C.F. {{ fattura.cliente_piva }}
-                {% if fattura.cliente_sdi %}<br>SDI: {{ fattura.cliente_sdi }}{% endif %}
-                {% if fattura.cliente_pec %}<br>PEC: {{ fattura.cliente_pec }}{% endif %}
+                <strong>{{ fattura.cliente_nome }}</strong><br>
+                {% if cliente and cliente.indirizzo %}
+                    {{ cliente.indirizzo }}<br>
+                {% endif %}
+                {% if cliente and cliente.partita_iva %}
+                    P.IVA: {{ cliente.partita_iva }}<br>
+                {% endif %}
+                {% if cliente and cliente.codice_fiscale %}
+                    C.F. {{ cliente.codice_fiscale }}<br>
+                {% endif %}
+                {% if cliente and cliente.codice_sdi %}
+                    SDI: {{ cliente.codice_sdi }}<br>
+                {% endif %}
+                {% if cliente and cliente.pec %}
+                    PEC: {{ cliente.pec }}
+                {% endif %}
             </div>
         </td>
     </tr>
@@ -100,7 +111,7 @@
                 <td>{{ r.unita_misura }}</td>
                 <td class="right">{{ r.quantita }}</td>
                 <td class="right">{{ "%.2f"|format(r.prezzo) }}&euro;</td>
-                <td class="right">{{ "%.2f"|format(r.totale) }}&euro;</td>
+                <td class="right">{{ "%.2f"|format(r.totale) }}&trade;</td>
             </tr>
             {% endif %}{% endfor %}
         </tbody>
@@ -156,17 +167,13 @@
 <!-- PAGAMENTO -->
 <div class="pagamento">
     <b>Dati di pagamento</b><br>
-    {{ fattura.iban }}
+    Stato pagamento: {{ fattura.stato_pagamento }}<br>
+    {% if banca_selezionata %}
+        <b>Coordinate Bancarie:</b> {{ banca_selezionata }}
+    {% else %}
+        <em>Nessun dettaglio bancario inserito o richiesto.</em>
+    {% endif %}
 </div>
-
-<!-- AUTO-PRINT DI SICUREZZA PER COMPATIBILITÀ RENDERING -->
-{% if autoprint %}
-<script>
-    window.onload = function() {
-        window.print();
-    };
-</script>
-{% endif %}
 
 </body>
 </html>

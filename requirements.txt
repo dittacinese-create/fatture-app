@@ -4,3 +4,4 @@ xhtml2pdf
 gunicorn
 flask-login
 psycopg2-binary
+xhtml2pdf==0.2.11
