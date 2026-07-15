@@ -59,7 +59,10 @@ def init_db():
             )
         """)
         
-        # Tabella Prodotti (Usiamo 'prezzo_base' per allinearci al tuo HTML)
+        # FORZIAMO IL RESET DELLA TABELLA PRODOTTI PER AGGIORNARE LE COLONNE
+        cur.execute("DROP TABLE IF EXISTS prodotti CASCADE;")
+        
+        # Ricreiamo la Tabella Prodotti con la colonna corretta allineata al tuo HTML
         cur.execute("""
             CREATE TABLE IF NOT EXISTS prodotti (
                 id SERIAL PRIMARY KEY,
@@ -128,7 +131,6 @@ def nuova_fattura():
         stato = request.form.get("stato", "BOZZA")
         banca_id = request.form.get("banca_id")
         
-        # Conversione e validazione sicura del cliente_id
         cliente_id = None
         cliente_nome = "Cliente Generico"
         if cliente_id_raw and cliente_id_raw.strip():
@@ -168,13 +170,24 @@ def nuova_fattura():
 def vedi_fattura(fattura_id):
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    
+    # Recupera la fattura
     cur.execute("SELECT * FROM fatture WHERE id = %s", (fattura_id,))
     f = cur.fetchone()
-    cur.close()
+    
     if not f:
+        cur.close()
         flash("Fattura non trovata.", "danger")
         return redirect(url_for("fatture"))
-    return render_template("fattura_dettaglio.html", f=f)
+        
+    # Recupera in modo sicuro i dettagli del cliente associato se esiste
+    cliente = None
+    if f["cliente_id"]:
+        cur.execute("SELECT * FROM clienti WHERE id = %s", (f["cliente_id"],))
+        cliente = cur.fetchone()
+        
+    cur.close()
+    return render_template("fattura_dettaglio.html", f=f, cliente=cliente)
 
 
 @app.route("/delete_fattura/<int:fattura_id>")
@@ -261,7 +274,7 @@ def prodotti():
         nome = request.form.get("nome")
         prezzo_base = request.form.get("prezzo_base")
         if not prezzo_base:
-            prezzo_base = request.form.get("prezzo", 0.0) # Fallback se usasse ancora 'prezzo'
+            prezzo_base = request.form.get("prezzo", 0.0)
         
         try:
             prezzo_base = float(prezzo_base)
