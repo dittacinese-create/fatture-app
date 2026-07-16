@@ -1121,6 +1121,7 @@ def delete_prodotto(prodotto_id):
 # ==============================================================================
 # 9. DASHBOARD & STATISTICHE
 # =============================================================================
+
 @app.route("/dashboard")
 def dashboard():
     db = get_db()
@@ -1145,9 +1146,8 @@ def dashboard():
     except Exception as e:
         db.rollback()
 
-    # --- CONFIGURAZIONE AUTO-RILEVATA DELL'ANNO CORRENTE ---
-    # Rileva automaticamente l'anno di oggi in modo che mostri sempre i dati corretti
-    anno_corrente = datetime.now().year
+    # --- CONFIGURAZIONE ANNO CORRENTE (2026) ---
+    anno_corrente = 2026
     default_inizio = f"{anno_corrente}-01-01"
     default_fine = f"{anno_corrente}-12-31"
 
@@ -1168,8 +1168,8 @@ def dashboard():
         date_inizio_filtro = datetime.strptime(filtro_inizio, "%Y-%m-%d").date()
         date_fine_filtro = datetime.strptime(filtro_fine, "%Y-%m-%d").date()
     except Exception:
-        date_inizio_filtro = datetime(anno_corrente, 1, 1).date()
-        date_fine_filtro = datetime(anno_corrente, 12, 31).date()
+        date_inizio_filtro = datetime(2026, 1, 1).date()
+        date_fine_filtro = datetime(2026, 12, 31).date()
 
     # Carichiamo tutte le fatture
     query = """
@@ -1189,26 +1189,41 @@ def dashboard():
         cur.execute(query)
         tutte_le_fatture = cur.fetchall()
 
-        for f in tutte_le_fatture:
-            # parsing data flessibile
-            data_str = str(f.get('data_fattura') or f.get('data') or f.get('data_inserimento') or '').strip()
-            data_valida = None
-            
-            for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
-                try:
-                    data_valida = datetime.strptime(data_str, fmt).date()
-                    break
-                except ValueError:
-                    continue
+        # Log di debug temporaneo per capire cosa estrae il database
+        if tutte_le_fatture:
+            print("DEBUG DASHBOARD: Prima riga del DB:", dict(tutte_le_fatture[0]))
+        else:
+            print("DEBUG DASHBOARD: Nessuna riga trovata nel DB.")
 
-            # Se non c'è una data interpretabile, la includiamo comunque per non perdere righe
+        for f in tutte_le_fatture:
+            # Estrarre la data provando tutte le colonne possibili del database
+            data_str = ""
+            for chiave_data in ('data_fattura', 'data', 'data_inserimento'):
+                if f.get(chiave_data):
+                    data_str = str(f.get(chiave_data)).strip()
+                    break
+
+            data_valida = None
+            if data_str:
+                for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
+                    try:
+                        data_valida = datetime.strptime(data_str, fmt).date()
+                        break
+                    except ValueError:
+                        continue
+
+            # Se la data è valida, applichiamo il filtro temporale
             if data_valida:
-                # Applichiamo il filtro dinamico sulle date
                 if data_valida < date_inizio_filtro or data_valida > date_fine_filtro:
                     continue
+            else:
+                # Se la fattura non ha data o non è interpretabile, la includiamo comunque 
+                # per non svuotare la tabella in caso di errori di inserimento
+                pass
 
             # Filtro tipologia
-            if filtro_tipo and str(f.get('tipologia') or '').strip().upper() != filtro_tipo.upper():
+            tipologia_db = str(f.get('tipologia') or f.get('tipo') or '').strip().upper()
+            if filtro_tipo and tipologia_db != filtro_tipo.upper():
                 continue
                 
             # Filtro cliente
@@ -1217,7 +1232,7 @@ def dashboard():
                 continue
 
             # Filtro stato pagamento
-            stato_pag = str(f.get('stato_pagamento') or '').strip().lower()
+            stato_pag = str(f.get('stato_pagamento') or f.get('stato') or '').strip().lower()
             if filtro_stato:
                 filtro_stato_f = filtro_stato.lower()
                 if filtro_stato_f in ['pagato', 'pagata'] and 'pagat' not in stato_pag:
@@ -1229,7 +1244,7 @@ def dashboard():
 
             fatture_filtrate.append(f)
 
-            # Calcolo dei totali con gestione robusta delle stringhe
+            # Calcolo dei totali con gestione robusta delle chiavi d'importo
             importo_val = f.get('importo_totale') or f.get('importo') or f.get('totale') or 0
             if isinstance(importo_val, str):
                 try:
@@ -1274,6 +1289,7 @@ def dashboard():
         filtro_stato=filtro_stato,
         anno_corrente=anno_corrente
     )
+    
 # ==============================================================================
 # 10.NOTE 
 # ==============================================================================
