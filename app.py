@@ -1133,6 +1133,13 @@ def dashboard():
     except Exception as e:
         db.rollback()
 
+    # --- PULIZIA AUTOMATICA RECORD PRECEDENTI ---
+    try:
+        cur.execute("UPDATE fatture SET cliente_nome = 'Cliente Generico' WHERE cliente_nome IS NULL OR cliente_nome = 'None';")
+        db.commit()
+    except Exception:
+        db.rollback()
+
     clienti_lista = []
     try:
         cur.execute("SELECT nome FROM clienti ORDER BY nome ASC")
@@ -1231,7 +1238,7 @@ def dashboard():
             
             f['data_pagamento'] = data_pag_valida or raw_pagamento
             f['data_pagamento_raw'] = data_pag_iso or raw_pagamento
-            
+
             # Filtro tipologia
             tipologia_db = str(f.get('tipo') or f.get('tipologia') or '').strip().upper()
             if filtro_tipo and tipologia_db != filtro_tipo.upper():
@@ -1301,8 +1308,10 @@ def dashboard():
         filtro_tipo=filtro_tipo,
         filtro_cliente=filtro_cliente,
         filtro_stato=filtro_stato,
-        anno_corrente=anno_corrente
+        anno_corrente=anno_corrente,
+        password_sblocco=PASSWORD_ACCESSO
     )
+    
 # ==============================================================================
 # 10. API DI AGGIORNAMENTO STATO IN TEMPO REALE (DASHBOARD)
 # ==============================================================================

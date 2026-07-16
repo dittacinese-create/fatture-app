@@ -195,14 +195,16 @@ function reimpostaZoom() {
     container.style.width = '100%';
 }
 
-// Funzione di sblocco con Password
+// Funzione di sblocco con Password da config.py
 function gestisciSblocco() {
     if (!tabellaSbloccata) {
-        const password = prompt("Inserisci la password di sicurezza per sbloccare la tabella:");
-        if (password === null) return;
+        const passwordInserita = prompt("Inserisci la password di sicurezza per sbloccare la tabella:");
+        if (passwordInserita === null) return;
         
-        // Verifica temporanea lato client (sostituisci con chiamata API se necessario)
-        if (password === "1234") { 
+        // Confronta la password inserita con quella configurata in config.py
+        const passwordCorretta = "{{ password_sblocco }}"; 
+        
+        if (passwordInserita === passwordCorretta) { 
             tabellaSbloccata = true;
             aggiornaStatoSblocco(true);
         } else {
