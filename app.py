@@ -1122,10 +1122,16 @@ def delete_prodotto(prodotto_id):
 # 9. DASHBOARD & STATISTICHE
 # ==============================================================================
 
+from datetime import datetime
+
 @app.route("/dashboard")
 def dashboard():
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    
+    # Inizializziamo le variabili diagnostiche
+    errore_rilevato = None
+    chiavi_rilevate = []
     
     # --- CORREZIONE VINCOLO DATABASE ---
     try:
@@ -1135,7 +1141,7 @@ def dashboard():
             CHECK (stato_pagamento IN ('Pagato', 'Non Pagato', 'Parziale', 'Parzialmente Pagato', 'Pagata', 'Non pagata'));
         """)
         db.commit()
-    except Exception:
+    except Exception as e:
         db.rollback()
 
     # --- LISTA COMPLETA CLIENTI PER AUTOCOMPLETAMENTO ---
@@ -1145,7 +1151,6 @@ def dashboard():
         clienti_lista = [r['nome'] for r in cur.fetchall() if r['nome']]
     except Exception as e:
         db.rollback()
-        print(f"Errore recupero lista clienti: {e}")
 
     # --- CONFIGURAZIONE DEFAULT ANNO CORRENTE (2026) ---
     anno_corrente = 2026
@@ -1165,7 +1170,6 @@ def dashboard():
         filtro_cliente = request.args.get('cliente', '').strip()
         filtro_stato = request.args.get('stato_pagamento', '').strip()
 
-    # Convertiamo i filtri in oggetti date di Python per il confronto sicuro
     try:
         date_inizio_filtro = datetime.strptime(filtro_inizio, "%Y-%m-%d").date()
         date_fine_filtro = datetime.strptime(filtro_fine, "%Y-%m-%d").date()
@@ -1173,33 +1177,14 @@ def dashboard():
         date_inizio_filtro = datetime(2026, 1, 1).date()
         date_fine_filtro = datetime(2026, 12, 31).date()
 
-    # --- QUERY COMPLETA ---
-    # Selezioniamo tutte le fatture e filtriamo in modo sicuro in Python per evitare crash del database
+    # Carichiamo TUTTE le fatture e facciamo il filtro in Python in modo da analizzare la struttura
     query = """
         SELECT f.*, 
                COALESCE(c.nome, f.cliente) as cliente_nome
         FROM fatture f
         LEFT JOIN clienti c ON f.cliente_id = c.id
-        WHERE 1=1
+        ORDER BY f.id ASC
     """
-    params = []
-
-    if filtro_tipo:
-        query += " AND UPPER(f.tipologia) = UPPER(%s)"
-        params.append(filtro_tipo)
-    if filtro_cliente:
-        query += " AND (COALESCE(c.nome, f.cliente) ILIKE %s)"
-        params.append(f"%{filtro_cliente}%")
-    if filtro_stato:
-        if filtro_stato.lower() in ['pagato', 'pagata']:
-            query += " AND f.stato_pagamento ILIKE 'pagat%'"
-        elif filtro_stato.lower() in ['non pagato', 'non pagata']:
-            query += " AND f.stato_pagamento ILIKE 'non pagat%'"
-        else:
-            query += " AND f.stato_pagamento = %s"
-            params.append(filtro_stato)
-
-    query += " ORDER BY f.id ASC"
 
     fatture_filtrate = []
     totale_generale = 0.0
@@ -1207,33 +1192,61 @@ def dashboard():
     totale_mancante = 0.0
 
     try:
-        cur.execute(query, tuple(params))
+        cur.execute(query)
         tutte_le_fatture = cur.fetchall()
 
+        if tutte_le_fatture:
+            # Salviamo le chiavi reali del record per scopi di debug se la tabella è vuota
+            chiavi_rilevate = list(tutte_le_fatture[0].keys())
+
         for f in tutte_le_fatture:
-            # 1. Parsing sicuro della data della fattura dal database (formato 'DD/MM/YYYY')
-            data_str = str(f.get('data_fattura') or '').strip()
-            data_valida = None
+            # Cerchiamo in modo flessibile il campo data
+            data_str = str(f.get('data_fattura') or f.get('data') or '').strip()
             
-            for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+            data_valida = None
+            for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
                 try:
                     data_valida = datetime.strptime(data_str, fmt).date()
                     break
                 except ValueError:
                     continue
 
-            # Se la data è mancante o invalida, saltiamo o non la includiamo nel filtro temporale
+            # Se non riusciamo ad interpretare la data, non escludiamo a priori la fattura ma la mostriamo comunque
+            # per evitare di nascondere righe all'utente (assegniamo una data fittizia del 2026)
             if not data_valida:
+                try:
+                    # Tentativo estremo: se c'è scritto "2026" nella stringa della data
+                    if "2026" in data_str:
+                        data_valida = datetime(2026, 7, 15).date()
+                except Exception:
+                    pass
+
+            if data_valida:
+                # Applichiamo il filtro sulle date
+                if data_valida < date_inizio_filtro or data_valida > date_fine_filtro:
+                    continue
+
+            # Applichiamo i filtri testuali direttamente in Python in modo sicuro
+            if filtro_tipo and str(f.get('tipologia') or '').strip().upper() != filtro_tipo.upper():
+                continue
+                
+            cliente_reale = str(f.get('cliente_nome') or f.get('cliente') or '').strip().lower()
+            if filtro_cliente and filtro_cliente.lower() not in cliente_reale:
                 continue
 
-            # 2. Applichiamo il filtro sulle date
-            if data_valida < date_inizio_filtro or data_valida > date_fine_filtro:
-                continue
+            stato_pag = str(f.get('stato_pagamento') or '').strip().lower()
+            if filtro_stato:
+                filtro_stato_f = filtro_stato.lower()
+                if filtro_stato_f in ['pagato', 'pagata'] and 'pagat' not in stato_pag:
+                    continue
+                elif filtro_stato_f in ['non pagato', 'non pagata'] and 'non' not in stato_pag:
+                    continue
+                elif filtro_stato_f == 'parziale' and 'parzial' not in stato_pag:
+                    continue
 
-            # La fattura supera tutti i controlli: la aggiungiamo alla lista finale
             fatture_filtrate.append(f)
 
-            # 3. Calcolo dei totali
+            # Calcolo dei totali
             importo_val = f.get('importo_totale') or f.get('importo') or f.get('totale') or 0
             if isinstance(importo_val, str):
                 try:
@@ -1241,11 +1254,10 @@ def dashboard():
                 except ValueError:
                     importo_val = 0.0
             else:
-                importo_val = float(importo_val)
+                importo_val = float(importo_val or 0)
                 
             totale_generale += importo_val
             
-            stato_pag = str(f.get('stato_pagamento') or '').strip().lower()
             if stato_pag in ['pagato', 'pagata']:
                 totale_pagato += importo_val
             elif stato_pag in ['parziale', 'parzialmente pagato', 'parzialmente pagata']:
@@ -1261,11 +1273,7 @@ def dashboard():
 
     except Exception as e:
         db.rollback()
-        print(f"Errore caricamento e filtro dati: {e}")
-        fatture_filtrate = []
-        totale_generale = 0.0
-        totale_pagato = 0.0
-        totale_mancante = 0.0
+        errore_rilevato = str(e)
     finally:
         cur.close()
         
@@ -1280,7 +1288,9 @@ def dashboard():
         filtro_fine=filtro_fine,
         filtro_tipo=filtro_tipo,
         filtro_cliente=filtro_cliente,
-        filtro_stato=filtro_stato
+        filtro_stato=filtro_stato,
+        errore_debug=errore_rilevato,
+        chiavi_debug=chiavi_rilevate
     )
 
 # ==============================================================================
