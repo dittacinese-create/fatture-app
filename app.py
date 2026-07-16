@@ -1119,190 +1119,93 @@ def delete_prodotto(prodotto_id):
 
 @app.route("/dashboard")
 def dashboard():
-    db = get_db()
-    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    # 1. Recupera i parametri dei filtri dalla richiesta GET
+    filtro_inizio = request.args.get("inizio", "").strip() or None
+    filtro_fine = request.args.get("fine", "").strip() or None
+    filtro_cliente = request.args.get("cliente", "").strip() or None
+    filtro_tipo = request.args.get("tipo", "").strip() or None
+    filtro_stato = request.args.get("stato_pagamento", "").strip() or None
     
-    # --- CORREZIONE VINCOLO DATABASE ---
-    try:
-        cur.execute("ALTER TABLE fatture DROP CONSTRAINT IF EXISTS fatture_stato_pagamento_check;")
-        cur.execute("""
-            ALTER TABLE fatture ADD CONSTRAINT fatture_stato_pagamento_check 
-            CHECK (stato_pagamento IN ('Pagato', 'Non Pagato', 'Parziale', 'Parzialmente Pagato', 'Pagata', 'Non pagata'));
-        """)
-        db.commit()
-    except Exception as e:
-        db.rollback()
+    # Se l'utente clicca su "Azzera"
+    if request.args.get("azzera"):
+        filtro_inizio = filtro_fine = filtro_cliente = filtro_tipo = filtro_stato = None
 
-    clienti_lista = []
-    try:
-        cur.execute("SELECT nome FROM clienti ORDER BY nome ASC")
-        clienti_lista = [r['nome'] for r in cur.fetchall() if r['nome']]
-    except Exception as e:
-        db.rollback()
+    db = get_db()
+    cur = db.cursor()
 
-    # --- CONFIGURAZIONE FILTRI TEMPORALI (Default 2026) ---
-    anno_corrente = 2026
-    default_inizio = f"{anno_corrente}-01-01"
-    default_fine = f"{anno_corrente}-12-31"
-
-    if 'inizio' not in request.args or request.args.get('azzera'):
-        filtro_inizio = default_inizio
-        filtro_fine = default_fine
-        filtro_tipo = ""
-        filtro_cliente = ""
-        filtro_stato = ""
-    else:
-        filtro_inizio = request.args.get('inizio', '').strip() or default_inizio
-        filtro_fine = request.args.get('fine', '').strip() or default_fine
-        filtro_tipo = request.args.get('tipo', '').strip()
-        filtro_cliente = request.args.get('cliente', '').strip()
-        filtro_stato = request.args.get('stato_pagamento', '').strip()
-
-    try:
-        date_inizio_filtro = datetime.strptime(filtro_inizio, "%Y-%m-%d").date()
-        date_fine_filtro = datetime.strptime(filtro_fine, "%Y-%m-%d").date()
-    except Exception:
-        date_inizio_filtro = datetime(2026, 1, 1).date()
-        date_fine_filtro = datetime(2026, 12, 31).date()
-
-    # CORRETTO: COALESCE usa f.cliente_nome perché la colonna f.cliente non esiste
+    # 2. Costruisci la query con i filtri per le fatture
     query = """
         SELECT f.*, 
-               COALESCE(c.nome, f.cliente_nome) as cliente_nome_coalesce
+               COALESCE(c.nome, f.cliente_nome, 'Cliente Generico') as cliente_nome
         FROM fatture f
         LEFT JOIN clienti c ON f.cliente_id = c.id
-        ORDER BY f.id ASC
+        WHERE 1=1
     """
+    params = []
 
-    fatture_filtrate = []
+    if filtro_inizio:
+        query += " AND f.data_fattura >= %s"
+        params.append(filtro_inizio)
+    if filtro_fine:
+        query += " AND f.data_fattura <= %s"
+        params.append(filtro_fine)
+    if filtro_cliente:
+        query += " AND (c.nome ILIKE %s OR f.cliente_nome ILIKE %s)"
+        params.append(f"%{filtro_cliente}%")
+        params.append(f"%{filtro_cliente}%")
+    if filtro_tipo:
+        query += " AND f.tipo = %s"
+        params.append(filtro_tipo)
+    if filtro_stato:
+        query += " AND f.stato_pagamento = %s"
+        params.append(filtro_stato)
+
+    query += " ORDER BY f.numero_fattura DESC, f.id DESC"
+    
+    cur.execute(query, params)
+    fatture = cur.fetchall()
+
+    # 3. Calcolo dei KPI (Totali) basato sulle fatture filtrate (o generali)
     totale_generale = 0.0
     totale_pagato = 0.0
-    totale_mancante = 0.0
 
-    try:
-        cur.execute(query)
-        tutte_le_fatture = cur.fetchall()
-
-        for row in tutte_le_fatture:
-            f = dict(row)
-            
-            # 1. Parsing sicuro e flessibile della data
-            data_str = ""
-            for campo in ('data_fattura', 'data'):
-                if f.get(campo):
-                    data_str = str(f.get(campo)).strip()
-                    break
-
-            data_valida = None
-            if data_str:
-                for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
-                    try:
-                        data_valida = datetime.strptime(data_str, fmt).date()
-                        break
-                    except ValueError:
-                        continue
-
-            # Applichiamo il filtro data se la data è valida
-            if data_valida:
-                if data_valida < date_inizio_filtro or data_valida > date_fine_filtro:
-                    continue
-
-            # 2. Mappatura campi per compatibilità totale con il template
-            # ...
-            f['numero_fattura'] = f.get('numero') or f.get('numero_fattura') or f.get('id')
-            f['cliente_nome'] = f.get('cliente_nome_coalesce') or f.get('cliente_nome') or 'Cliente Generico'
-            f['data_fattura'] = data_str
-            f['data_scadenza'] = f.get('scadenza') or f.get('data_scadenza') or ''
-            f['note'] = f.get('note') or f.get('cantiere') or ''
-            
-            # Normalizzazione della data di pagamento per l'input date HTML (richiede YYYY-MM-DD)
-            raw_pagamento = str(f.get('data_pagamento') or f.get('pagato_il') or '').strip()
-            data_pag_valida = ""
-            data_pag_iso = ""
-            if raw_pagamento:
-                for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
-                    try:
-                        dt_obj = datetime.strptime(raw_pagamento, fmt).date()
-                        data_pag_valida = dt_obj.strftime("%d/%m/%Y")
-                        data_pag_iso = dt_obj.strftime("%Y-%m-%d")
-                        break
-                    except ValueError:
-                        continue
-            
-            f['data_pagamento'] = data_pag_valida or raw_pagamento
-            f['data_pagamento_raw'] = data_pag_iso or raw_pagamento
-
-            # Filtro tipologia
-            tipologia_db = str(f.get('tipo') or f.get('tipologia') or '').strip().upper()
-            if filtro_tipo and tipologia_db != filtro_tipo.upper():
-                continue
-                
-            # Filtro cliente
-            cliente_reale = str(f['cliente_nome']).strip().lower()
-            if filtro_cliente and filtro_cliente.lower() not in cliente_reale:
-                continue
-
-            # Uniformiamo lo stato di pagamento per evitare conflitti di genere (Maschile/Femminile)
-            stato_pag_db = str(f.get('stato_pagamento') or '').strip().lower()
-            if 'pagat' in stato_pag_db and 'non' not in stato_pag_db:
-                f['stato_pagamento'] = 'Pagato'
-            elif 'parzial' in stato_pag_db:
-                f['stato_pagamento'] = 'Parziale'
-            else:
-                f['stato_pagamento'] = 'Non Pagato'
-
-            # Filtro stato pagamento
-            if filtro_stato and f['stato_pagamento'].lower() != filtro_stato.lower():
-                continue
-
-            fatture_filtrate.append(f)
-
-            # 3. Calcolo dei totali
-            importo_val = f.get('totale') or f.get('importo_totale') or f.get('importo') or 0
-            if isinstance(importo_val, str):
-                try:
-                    importo_val = float(importo_val.replace('.', '').replace(',', '.'))
-                except ValueError:
-                    importo_val = 0.0
-            else:
-                importo_val = float(importo_val or 0)
-                
-            f['importo_totale'] = importo_val
-            totale_generale += importo_val
-            
-            if f['stato_pagamento'] == 'Pagato':
-                totale_pagato += importo_val
-            elif f['stato_pagamento'] == 'Parziale':
-                gia_pagato = f.get('totale_pagato') or f.get('importo_pagato') or 0
-                try:
-                    gia_pagato_float = float(gia_pagato)
-                except (ValueError, TypeError):
-                    gia_pagato_float = 0.0
-                totale_pagato += gia_pagato_float
-                totale_mancante += max(0.0, importo_val - gia_pagato_float)
-            else:
-                totale_mancante += importo_val
-
-    except Exception as e:
-        db.rollback()
-        print(f"Errore caricamento dati dashboard: {e}")
-    finally:
-        cur.close()
+    for f in fatture:
+        imp_tot = float(f.get("importo_totale") or 0.0)
+        totale_generale += imp_tot
         
+        stato = (f.get("stato_pagamento") or "").lower()
+        if stato == "pagato":
+            totale_pagato += imp_tot
+        elif stato == "parziale":
+            # Usa il totale_pagato registrato sulla singola fattura
+            totale_pagato += float(f.get("totale_pagato") or 0.0)
+
+    totale_mancante = max(0.0, totale_generale - totale_pagato)
+
+    # 4. Recupera la lista unica dei clienti per l'autocompletamento nei filtri
+    cur.execute("SELECT nome FROM clienti ORDER BY nome ASC")
+    clienti_lista = [r["nome"] for r in cur.fetchall()]
+
+    cur.close()
+
+    # 5. Prendi la password di sicurezza dal tuo config
+    # (Sostituisci con il modo in cui recuperi la password, es: app.config['PASSWORD_SBLOCCO'] o da os.environ)
+    password_sblocco = "TuaPasswordSicura" 
+
+    # Invia tutto al template
     return render_template(
-        "dashboard.html", 
-        fatture=fatture_filtrate,
+        "dashboard.html",
+        fatture=fatture,
         totale_generale=totale_generale,
         totale_pagato=totale_pagato,
         totale_mancante=totale_mancante,
+        filtro_inizio=filtro_inizio or "",
+        filtro_fine=filtro_fine or "",
+        filtro_cliente=filtro_cliente or "",
+        filtro_tipo=filtro_tipo or "",
+        filtro_stato=filtro_stato or "",
         clienti_lista=clienti_lista,
-        filtro_inizio=filtro_inizio,
-        filtro_fine=filtro_fine,
-        filtro_tipo=filtro_tipo,
-        filtro_cliente=filtro_cliente,
-        filtro_stato=filtro_stato,
-        anno_corrente=anno_corrente,
-        password_sblocco=PASSWORD_ACCESSO
+        password_sblocco=password_sblocco
     )
     
 # ==============================================================================

@@ -162,7 +162,7 @@
 
                 <!-- Colonna Importo Ricevuto (Mostrata solo quando sbloccata) -->
                 <td class="colonna-importo-parziale" style="border: 1px solid #cbd5e1; padding: 7px 10px; text-align: right; display: none;">
-                    <input type="number" step="0.01" class="input-importo-parziale" disabled value="{{ f.importo_pagato or '' }}" onchange="salvaModificaRiga(this)" style="padding: 4px; font-size: 12px; border-radius: 4px; border: 1px solid #cbd5e1; width: 100px; text-align: right; cursor: not-allowed;">
+                    <input type="number" step="0.01" class="input-importo-parziale" disabled value="{{ f.totale_pagato or '' }}" onchange="salvaModificaRiga(this)" style="padding: 4px; font-size: 12px; border-radius: 4px; border: 1px solid #cbd5e1; width: 100px; text-align: right; cursor: not-allowed;">
                 </td>
             </tr>
             {% else %}
@@ -176,9 +176,23 @@
     </table>
 </div>
 
+<!-- ELEMENTO POPUP TOAST DI SALVATAGGIO -->
+<div id="toastSalvataggio" class="toast-notifica">
+    💾 Salvataggio automatico completato!
+</div>
+
 <script>
 let zoomAttuale = 1.0;
 let tabellaSbloccata = false;
+
+// Mostra popup di conferma salvataggio automatico
+function mostraToastSalvataggio() {
+    const toast = document.getElementById('toastSalvataggio');
+    toast.classList.add('show');
+    setTimeout(() => {
+        toast.classList.remove('show');
+    }, 2000);
+}
 
 // Funzioni per lo zoom
 function cambiaZoom(valore) {
@@ -285,7 +299,7 @@ function gestisciCambioStato(selettore) {
     salvaModificaRiga(selettore);
 }
 
-// API di salvataggio in tempo reale
+// API di salvataggio in tempo reale con Toast di avvenuto salvataggio
 function salvaModificaRiga(elemento) {
     const riga = elemento.closest('tr');
     const fatturaId = riga.getAttribute('data-id');
@@ -307,7 +321,9 @@ function salvaModificaRiga(elemento) {
     })
     .then(response => response.json())
     .then(data => {
-        if (!data.success) {
+        if (data.success) {
+            mostraToastSalvataggio();
+        } else {
             alert("Errore durante il salvataggio dei dati: " + data.message);
         }
     })
@@ -338,6 +354,31 @@ function azzeraFiltri() {
 }
 .selettore-stato option {
     font-weight: bold;
+}
+
+/* Stile per il popup di notifica salvataggio automatico */
+.toast-notifica {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background-color: #10B981; /* Verde Smeraldo */
+    color: white;
+    padding: 12px 24px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 1000;
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    pointer-events: none;
+}
+.toast-notifica.show {
+    opacity: 1;
+    transform: translateY(0);
 }
 </style>
 
