@@ -1130,7 +1130,10 @@ def dashboard():
         filtro_inizio = filtro_fine = filtro_cliente = filtro_tipo = filtro_stato = None
 
     db = get_db()
-    cur = db.cursor()
+    
+    # CORREZIONE CRUCIALE: Usiamo DictCursor per poter usare f['chiave'] ed f.get('chiave')
+    import psycopg2.extras
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
 
     # 2. Query allineata con i nomi reali delle colonne (numero, data, totale, note)
     query = """
@@ -1174,23 +1177,23 @@ def dashboard():
         print(f"Errore query fatture: {e}")
         fatture = []
 
-    # 3. Calcolo dei KPI
+    # 3. Calcolo dei KPI dinamici basati sulla colonna corretta del database
     totale_generale = 0.0
     totale_pagato = 0.0
 
     for f in fatture:
-        imp_tot = float(f.get("importo_totale") or 0.0)
+        imp_tot = float(f["importo_totale"] or 0.0)
         totale_generale += imp_tot
         
-        stato = (f.get("stato_pagamento") or "").lower()
+        stato = (f["stato_pagamento"] or "").lower()
         if stato == "pagato":
             totale_pagato += imp_tot
         elif stato == "parziale":
-            totale_pagato += float(f.get("totale_pagato") or 0.0)
+            totale_pagato += float(f["totale_pagato"] or 0.0)
 
     totale_mancante = max(0.0, totale_generale - totale_pagato)
 
-    # 4. Recupera i clienti per il filtro
+    # 4. Recupera la lista dei clienti per il menu a tendina
     try:
         cur.execute("SELECT nome FROM clienti ORDER BY nome ASC")
         clienti_lista = [r["nome"] for r in cur.fetchall()]
@@ -1199,9 +1202,9 @@ def dashboard():
 
     cur.close()
 
-    # 5. Password di sblocco (Usa quella nel tuo config.py, es. PASSWORD_DASHBOARD o simile)
-    # Cambia "1234" con la stringa corretta o con la variabile di configurazione che usi solitamente
-    password_sblocco = "1234" 
+    # 5. Recuperiamo la password corretta direttamente dal file config.py
+    from config import PASSWORD_ACCESSO
+    password_sblocco = PASSWORD_ACCESSO
 
     return render_template(
         "dashboard.html",
@@ -1217,6 +1220,9 @@ def dashboard():
         clienti_lista=clienti_lista,
         password_sblocco=password_sblocco
     )
+```eof
+
+
 # ==============================================================================
 # 10. API DI AGGIORNAMENTO STATO IN TEMPO REALE (DASHBOARD)
 # ==============================================================================
