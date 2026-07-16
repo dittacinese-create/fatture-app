@@ -1133,13 +1133,6 @@ def dashboard():
     except Exception as e:
         db.rollback()
 
-    # --- PULIZIA AUTOMATICA RECORD PRECEDENTI ---
-    try:
-        cur.execute("UPDATE fatture SET cliente_nome = 'Cliente Generico' WHERE cliente_nome IS NULL OR cliente_nome = 'None';")
-        db.commit()
-    except Exception:
-        db.rollback()
-
     clienti_lista = []
     try:
         cur.execute("SELECT nome FROM clienti ORDER BY nome ASC")
@@ -1340,12 +1333,19 @@ def api_aggiorna_stato():
     cur = db.cursor()
 
     try:
-        # Aggiorniamo lo stato della fattura nel database
+        # Forza la creazione della colonna corretta se mancante
+        try:
+            cur.execute("ALTER TABLE fatture ADD COLUMN IF NOT EXISTS totale_pagato NUMERIC(10,2) DEFAULT 0.0;")
+            db.commit()
+        except Exception:
+            db.rollback()
+
+        # Aggiorna usando 'totale_pagato' (colonna reale del DB)
         cur.execute("""
             UPDATE fatture 
             SET stato_pagamento = %s, 
                 data_pagamento = %s, 
-                importo_pagato = %s
+                totale_pagato = %s
             WHERE id = %s
         """, (stato, data_pagamento, importo_pagato, fattura_id))
         
