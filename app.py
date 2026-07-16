@@ -919,14 +919,10 @@ def genera_pdf(fattura_id):
             "email": "info@lazuaditta.it"
         }
         
-    # 4. Associa i dettagli della banca selezionata
+    # 4. Associa i dettagli della banca selezionata usando il dizionario BANCHE globale di config.py
     banca_selezionata = None
-    elenco_banche = {
-        "BPER": "BPER Banca - IT35S0538730600000004332185",
-        "POSTE": "Poste Italiane - IT04B0760110200001078221247"
-    }
-    if f["banca_id"] in elenco_banche:
-        banca_selezionata = elenco_banche[f["banca_id"]]
+    if f["banca_id"] in BANCHE:
+        banca_selezionata = BANCHE[f["banca_id"]]
         
     # 5. Recupera ddt e righe in base al tipo
     ddt_list = []
@@ -1001,7 +997,6 @@ def genera_pdf(fattura_id):
     response.headers['Content-Disposition'] = f'attachment; filename={filename}'
     
     return response
-
 
 # ==============================================================================
 # 7. SEZIONE CLIENTI
@@ -1170,9 +1165,10 @@ def dashboard():
         date_inizio_filtro = datetime(2026, 1, 1).date()
         date_fine_filtro = datetime(2026, 12, 31).date()
 
+    # CORRETTO: COALESCE usa f.cliente_nome perché la colonna f.cliente non esiste
     query = """
         SELECT f.*, 
-               COALESCE(c.nome, f.cliente) as cliente_nome
+               COALESCE(c.nome, f.cliente_nome) as cliente_nome_coalesce
         FROM fatture f
         LEFT JOIN clienti c ON f.cliente_id = c.id
         ORDER BY f.id ASC
@@ -1213,14 +1209,14 @@ def dashboard():
 
             # 2. Mappatura campi per compatibilità totale con il template
             f['numero_fattura'] = f.get('numero') or f.get('numero_fattura') or f.get('id')
-            f['cliente_nome'] = f.get('cliente_nome') or f.get('cliente') or 'Cliente Generico'
+            f['cliente_nome'] = f.get('cliente_nome_coalesce') or f.get('cliente_nome') or 'Cliente Generico'
             f['data_fattura'] = data_str
             f['data_scadenza'] = f.get('scadenza') or f.get('data_scadenza') or ''
             f['note'] = f.get('note') or f.get('cantiere') or ''
             f['data_pagamento'] = f.get('data_pagamento') or f.get('pagato_il') or ''
 
             # Filtro tipologia
-            tipologia_db = str(f.get('tipologia') or f.get('tipo') or '').strip().upper()
+            tipologia_db = str(f.get('tipo') or f.get('tipologia') or '').strip().upper()
             if filtro_tipo and tipologia_db != filtro_tipo.upper():
                 continue
                 
@@ -1245,7 +1241,7 @@ def dashboard():
             fatture_filtrate.append(f)
 
             # 3. Calcolo dei totali
-            importo_val = f.get('importo_totale') or f.get('importo') or f.get('totale') or 0
+            importo_val = f.get('totale') or f.get('importo_totale') or f.get('importo') or 0
             if isinstance(importo_val, str):
                 try:
                     importo_val = float(importo_val.replace('.', '').replace(',', '.'))
@@ -1272,7 +1268,7 @@ def dashboard():
 
     except Exception as e:
         db.rollback()
-        print(f"Errore caricamento dati: {e}")
+        print(f"Errore caricamento dati dashboard: {e}")
     finally:
         cur.close()
         
