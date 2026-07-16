@@ -206,10 +206,22 @@ def index():
 @app.route("/fatture")
 def fatture():
     db = get_db()
+    import psycopg2.extras
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    cur.execute("SELECT * FROM fatture ORDER BY data DESC, numero DESC")
+    
+    # Query con LEFT JOIN per calcolare nome_visualizzato
+    query = """
+        SELECT f.*, 
+               COALESCE(c.nome, f.cliente_nome, 'Cliente Generico') as nome_visualizzato
+        FROM fatture f
+        LEFT JOIN clienti c ON f.cliente_id = c.id
+        ORDER BY f.data DESC, f.numero DESC
+    """
+    
+    cur.execute(query)
     elenco_fatture = cur.fetchall()
     cur.close()
+    
     return render_template(
         "fatture.html", 
         fatture=elenco_fatture, 
