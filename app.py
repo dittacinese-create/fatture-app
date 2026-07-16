@@ -1126,17 +1126,23 @@ def dashboard():
     filtro_tipo = request.args.get("tipo", "").strip() or None
     filtro_stato = request.args.get("stato_pagamento", "").strip() or None
     
-    # Se l'utente clicca su "Azzera"
     if request.args.get("azzera"):
         filtro_inizio = filtro_fine = filtro_cliente = filtro_tipo = filtro_stato = None
 
     db = get_db()
     cur = db.cursor()
 
-    # 2. Costruisci la query con i filtri per le fatture
+    # 2. Query allineata con i nomi reali delle colonne (numero, data, totale, note)
     query = """
-        SELECT f.*, 
-               COALESCE(c.nome, f.cliente_nome, 'Cliente Generico') as cliente_nome
+        SELECT f.id,
+               f.numero AS numero_fattura, 
+               f.data AS data_fattura,
+               f.totale AS importo_totale,
+               f.note,
+               f.stato_pagamento,
+               f.data_pagamento,
+               f.totale_pagato,
+               COALESCE(c.nome, 'Cliente Generico') as cliente_nome
         FROM fatture f
         LEFT JOIN clienti c ON f.cliente_id = c.id
         WHERE 1=1
@@ -1144,14 +1150,13 @@ def dashboard():
     params = []
 
     if filtro_inizio:
-        query += " AND f.data_fattura >= %s"
+        query += " AND f.data >= %s"
         params.append(filtro_inizio)
     if filtro_fine:
-        query += " AND f.data_fattura <= %s"
+        query += " AND f.data <= %s"
         params.append(filtro_fine)
     if filtro_cliente:
-        query += " AND (c.nome ILIKE %s OR f.cliente_nome ILIKE %s)"
-        params.append(f"%{filtro_cliente}%")
+        query += " AND (c.nome ILIKE %s)"
         params.append(f"%{filtro_cliente}%")
     if filtro_tipo:
         query += " AND f.tipo = %s"
@@ -1160,12 +1165,16 @@ def dashboard():
         query += " AND f.stato_pagamento = %s"
         params.append(filtro_stato)
 
-    query += " ORDER BY f.numero_fattura DESC, f.id DESC"
+    query += " ORDER BY f.data DESC, f.id DESC"
     
-    cur.execute(query, params)
-    fatture = cur.fetchall()
+    try:
+        cur.execute(query, params)
+        fatture = cur.fetchall()
+    except Exception as e:
+        print(f"Errore query fatture: {e}")
+        fatture = []
 
-    # 3. Calcolo dei KPI (Totali) basato sulle fatture filtrate (o generali)
+    # 3. Calcolo dei KPI
     totale_generale = 0.0
     totale_pagato = 0.0
 
@@ -1177,22 +1186,23 @@ def dashboard():
         if stato == "pagato":
             totale_pagato += imp_tot
         elif stato == "parziale":
-            # Usa il totale_pagato registrato sulla singola fattura
             totale_pagato += float(f.get("totale_pagato") or 0.0)
 
     totale_mancante = max(0.0, totale_generale - totale_pagato)
 
-    # 4. Recupera la lista unica dei clienti per l'autocompletamento nei filtri
-    cur.execute("SELECT nome FROM clienti ORDER BY nome ASC")
-    clienti_lista = [r["nome"] for r in cur.fetchall()]
+    # 4. Recupera i clienti per il filtro
+    try:
+        cur.execute("SELECT nome FROM clienti ORDER BY nome ASC")
+        clienti_lista = [r["nome"] for r in cur.fetchall()]
+    except Exception:
+        clienti_lista = []
 
     cur.close()
 
-    # 5. Prendi la password di sicurezza dal tuo config
-    # (Sostituisci con il modo in cui recuperi la password, es: app.config['PASSWORD_SBLOCCO'] o da os.environ)
-    password_sblocco = "TuaPasswordSicura" 
+    # 5. Password di sblocco (Usa quella nel tuo config.py, es. PASSWORD_DASHBOARD o simile)
+    # Cambia "1234" con la stringa corretta o con la variabile di configurazione che usi solitamente
+    password_sblocco = "1234" 
 
-    # Invia tutto al template
     return render_template(
         "dashboard.html",
         fatture=fatture,
@@ -1207,7 +1217,6 @@ def dashboard():
         clienti_lista=clienti_lista,
         password_sblocco=password_sblocco
     )
-    
 # ==============================================================================
 # 10. API DI AGGIORNAMENTO STATO IN TEMPO REALE (DASHBOARD)
 # ==============================================================================
