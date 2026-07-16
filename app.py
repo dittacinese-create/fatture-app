@@ -1208,13 +1208,30 @@ def dashboard():
                     continue
 
             # 2. Mappatura campi per compatibilità totale con il template
+            # ...
             f['numero_fattura'] = f.get('numero') or f.get('numero_fattura') or f.get('id')
             f['cliente_nome'] = f.get('cliente_nome_coalesce') or f.get('cliente_nome') or 'Cliente Generico'
             f['data_fattura'] = data_str
             f['data_scadenza'] = f.get('scadenza') or f.get('data_scadenza') or ''
             f['note'] = f.get('note') or f.get('cantiere') or ''
-            f['data_pagamento'] = f.get('data_pagamento') or f.get('pagato_il') or ''
-
+            
+            # Normalizzazione della data di pagamento per l'input date HTML (richiede YYYY-MM-DD)
+            raw_pagamento = str(f.get('data_pagamento') or f.get('pagato_il') or '').strip()
+            data_pag_valida = ""
+            data_pag_iso = ""
+            if raw_pagamento:
+                for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
+                    try:
+                        dt_obj = datetime.strptime(raw_pagamento, fmt).date()
+                        data_pag_valida = dt_obj.strftime("%d/%m/%Y")
+                        data_pag_iso = dt_obj.strftime("%Y-%m-%d")
+                        break
+                    except ValueError:
+                        continue
+            
+            f['data_pagamento'] = data_pag_valida or raw_pagamento
+            f['data_pagamento_raw'] = data_pag_iso or raw_pagamento
+            
             # Filtro tipologia
             tipologia_db = str(f.get('tipo') or f.get('tipologia') or '').strip().upper()
             if filtro_tipo and tipologia_db != filtro_tipo.upper():
@@ -1287,7 +1304,53 @@ def dashboard():
         anno_corrente=anno_corrente
     )
 # ==============================================================================
-# 10.NOTE 
+# 10. API DI AGGIORNAMENTO STATO IN TEMPO REALE (DASHBOARD)
+# ==============================================================================
+
+@app.route("/api/aggiorna_stato", methods=["POST"])
+def api_aggiorna_stato():
+    data = request.get_json() or {}
+    fattura_id = data.get("id")
+    stato = data.get("stato")
+    data_pagamento = data.get("data_pagamento", "").strip() or None
+    importo_pagato = data.get("importo_pagato")
+
+    if not fattura_id:
+        return jsonify({"success": False, "message": "ID fattura mancante."}), 400
+
+    # Conversione sicura dell'importo pagato
+    if importo_pagato is not None and str(importo_pagato).strip() != "":
+        try:
+            importo_pagato = float(importo_pagato)
+        except ValueError:
+            importo_pagato = None
+    else:
+        importo_pagato = None
+
+    db = get_db()
+    cur = db.cursor()
+
+    try:
+        # Aggiorniamo lo stato della fattura nel database
+        cur.execute("""
+            UPDATE fatture 
+            SET stato_pagamento = %s, 
+                data_pagamento = %s, 
+                importo_pagato = %s
+            WHERE id = %s
+        """, (stato, data_pagamento, importo_pagato, fattura_id))
+        
+        db.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        db.rollback()
+        print(f"Errore durante l'aggiornamento dello stato della fattura {fattura_id}: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+    finally:
+        cur.close()
+
+# ==============================================================================
+# 11.NOTE 
 # ==============================================================================
 
 @app.route("/note")
@@ -1434,7 +1497,7 @@ def elimina_nota_api(id):
         cur.close()
 
 # ==============================================================================
-# 11. AVVIO APPLICAZIONE
+# 12. AVVIO APPLICAZIONE
 # ==============================================================================
 
 if __name__ == "__main__":

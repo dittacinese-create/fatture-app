@@ -1,6 +1,27 @@
 {% extends "base.html" %}
 {% block content %}
 
+<!-- CONTROLLI ZOOM E SBLOCCO TABELLA -->
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; gap: 10px; flex-wrap: wrap;">
+    <!-- Zoom della Tabella -->
+    <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 13px; font-weight: 600; color: #475569;">Zoom Tabella:</span>
+        <button onclick="cambiaZoom(0.1)" style="background: #f1f5f9; border: 1px solid #cbd5e1; padding: 4px 10px; border-radius: 4px; font-weight: bold; cursor: pointer;">+</button>
+        <button onclick="cambiaZoom(-0.1)" style="background: #f1f5f9; border: 1px solid #cbd5e1; padding: 4px 10px; border-radius: 4px; font-weight: bold; cursor: pointer;">-</button>
+        <button onclick="reimpostaZoom()" style="background: #e2e8f0; border: 1px solid #cbd5e1; padding: 4px 8px; border-radius: 4px; font-size: 11px; cursor: pointer;">Reset</button>
+    </div>
+
+    <!-- Sblocco Modifiche con Password -->
+    <div style="display: flex; align-items: center; gap: 10px;">
+        <div id="statoSblocco" style="font-size: 12px; font-weight: bold; color: #dc2626; display: flex; align-items: center; gap: 5px;">
+            <span style="width: 8px; height: 8px; background: #dc2626; border-radius: 50%; display: inline-block;"></span> Bloccata
+        </div>
+        <button id="btnSblocca" onclick="gestisciSblocco()" style="background-color: #0f172a; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;">
+            Sblocca Tabella
+        </button>
+    </div>
+</div>
+
 <!-- HEADER E BARRA KPI MINIMALE -->
 <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 25px;">
     <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -38,8 +59,6 @@
 <!-- PANNELLO FILTRI A SCOMPARSA -->
 <div id="pannelloFiltri" style="display: none; background: #f8fafc; padding: 15px; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 20px;">
     <form method="GET" action="{{ url_for('dashboard') }}" style="display: flex; flex-wrap: wrap; gap: 15px; align-items: flex-end;">
-        
-        <!-- Filtro Periodo -->
         <div style="display: flex; flex-direction: column; gap: 5px;">
             <label style="font-size: 11px; font-weight: bold; color: #475569; text-transform: uppercase;">Dal:</label>
             <input type="date" name="inizio" value="{{ filtro_inizio }}" style="padding: 7px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; width: 135px;">
@@ -49,7 +68,6 @@
             <input type="date" name="fine" value="{{ filtro_fine }}" style="padding: 7px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; width: 135px;">
         </div>
 
-        <!-- Filtro Cliente con Autocompletamento real-time -->
         <div style="display: flex; flex-direction: column; gap: 5px; flex-grow: 1; min-width: 180px;">
             <label style="font-size: 11px; font-weight: bold; color: #475569; text-transform: uppercase;">Cerca Cliente:</label>
             <input type="text" name="cliente" id="inputCliente" list="listaClienti" value="{{ filtro_cliente }}" placeholder="Inizia a digitare..." style="padding: 7px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;" autocomplete="off">
@@ -60,7 +78,6 @@
             </datalist>
         </div>
 
-        <!-- Filtro Tipologia -->
         <div style="display: flex; flex-direction: column; gap: 5px; width: 130px;">
             <label style="font-size: 11px; font-weight: bold; color: #475569; text-transform: uppercase;">Tipologia:</label>
             <select name="tipo" style="padding: 7px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: white;">
@@ -70,7 +87,6 @@
             </select>
         </div>
 
-        <!-- Filtro Stato Pagamento -->
         <div style="display: flex; flex-direction: column; gap: 5px; width: 140px;">
             <label style="font-size: 11px; font-weight: bold; color: #475569; text-transform: uppercase;">Stato Pagamento:</label>
             <select name="stato_pagamento" style="padding: 7px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: white;">
@@ -83,7 +99,6 @@
 
         <input type="hidden" name="azzera" id="inputAzzera" value="">
 
-        <!-- Pulsanti Azione -->
         <div style="display: flex; gap: 10px;">
             <button type="submit" style="background-color: #2563eb; color: white; border: none; padding: 7px 18px; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: bold;">Applica</button>
             <button type="button" onclick="azzeraFiltri()" style="background-color: #e2e8f0; color: #475569; border: none; padding: 7px 18px; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: bold;">Azzera</button>
@@ -91,8 +106,8 @@
     </form>
 </div>
 
-<!-- TABELLA DATI -->
-<div class="card" style="padding: 0; overflow-x: auto; border: 1px solid #cbd5e1; border-radius: 4px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+<!-- CONTENITORE TABELLA CON SUPPORTO ZOOM -->
+<div id="contenitoreTabella" class="card" style="padding: 0; overflow-x: auto; border: 1px solid #cbd5e1; border-radius: 4px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transform-origin: top left; transition: transform 0.15s ease;">
     <table class="tabella-sheets" style="width: 100%; border-collapse: collapse; font-family: Arial, sans-serif; font-size: 13px; color: #1c1c1c;">
         <thead>
             <tr style="background-color: #f2c4bc; text-align: left;">
@@ -102,14 +117,17 @@
                 <th style="border: 1px solid #cbd5e1; padding: 8px 10px; font-weight: bold; width: 110px; text-align: center;">Scadenza</th>
                 <th style="border: 1px solid #cbd5e1; padding: 8px 10px; font-weight: bold; text-align: right; width: 130px;">Importo Totale (€)</th>
                 <th style="border: 1px solid #cbd5e1; padding: 8px 10px; font-weight: bold; min-width: 150px;">Note / Cantiere</th>
-                <th style="border: 1px solid #cbd5e1; padding: 8px 10px; font-weight: bold; width: 120px; text-align: center;">Stato Pagamento</th>
-                <th style="border: 1px solid #cbd5e1; padding: 8px 10px; font-weight: bold; width: 120px; text-align: center; border-right: none;">Data Pagamento</th>
+                <th style="border: 1px solid #cbd5e1; padding: 8px 10px; font-weight: bold; width: 160px; text-align: center;">Stato Pagamento</th>
+                <th style="border: 1px solid #cbd5e1; padding: 8px 10px; font-weight: bold; width: 140px; text-align: center;">Data Pagamento</th>
+                <th class="colonna-importo-parziale" style="border: 1px solid #cbd5e1; padding: 8px 10px; font-weight: bold; width: 140px; text-align: right; display: none;">Importo Ricevuto (€)</th>
             </tr>
         </thead>
         <tbody>
             {% for f in fatture %}
-            <tr style="border-bottom: 1px solid #cbd5e1; {% if loop.index is odd %}background-color: #fafafa;{% endif %}">
-                <td style="border: 1px solid #cbd5e1; padding: 7px 10px; font-weight: bold; text-align: center;">
+            {% set stato_pag = f.stato_pagamento | lower %}
+            <!-- Applichiamo classe "riga-evidenziata" se non pagata o parziale -->
+            <tr data-id="{{ f.id }}" data-totale="{{ f.importo_totale | float }}" style="border-bottom: 1px solid #cbd5e1; {% if loop.index is odd %}background-color: #fafafa;{% endif %} {% if stato_pag != 'pagato' %}font-weight: bold; background-color: #fffbeb;{% endif %}">
+                <td style="border: 1px solid #cbd5e1; padding: 7px 10px; text-align: center;">
                     {{ f.numero_fattura or '' }}
                 </td>
                 <td style="border: 1px solid #cbd5e1; padding: 7px 10px;">
@@ -121,29 +139,35 @@
                 <td style="border: 1px solid #cbd5e1; padding: 7px 10px; text-align: center;">
                     {{ f.data_scadenza or '' }}
                 </td>
-                <td style="border: 1px solid #cbd5e1; padding: 7px 10px; text-align: right; font-weight: 500;">
+                <td style="border: 1px solid #cbd5e1; padding: 7px 10px; text-align: right;">
                     € {{ "{:,.2f}".format(f.importo_totale | float).replace(',', 'X').replace('.', ',').replace('X', '.') }}
                 </td>
                 <td style="border: 1px solid #cbd5e1; padding: 7px 10px;">
                     {{ f.note or '' }}
                 </td>
-                <td style="border: 1px solid #cbd5e1; padding: 7px 10px; font-weight: bold; text-align: center;">
-                    {% set stato_pag = f.stato_pagamento | lower %}
-                    {% if stato_pag == 'pagato' %}
-                        <span style="background-color: #dcfce7; color: #16a34a; padding: 4px 10px; border-radius: 4px; display: inline-block; font-size: 11px;">PAGATO</span>
-                    {% elif stato_pag == 'parziale' %}
-                        <span style="background-color: #fef3c7; color: #d97706; padding: 4px 10px; border-radius: 4px; display: inline-block; font-size: 11px;">PARZIALE</span>
-                    {% else %}
-                        <span style="background-color: #fee2e2; color: #dc2626; padding: 4px 10px; border-radius: 4px; display: inline-block; font-size: 11px;">NON PAGATO</span>
-                    {% endif %}
+                
+                <!-- Colonna Stato Pagamento (Interattiva) -->
+                <td style="border: 1px solid #cbd5e1; padding: 7px 10px; text-align: center;">
+                    <select class="selettore-stato" disabled onchange="gestisciCambioStato(this)" style="padding: 4px; border-radius: 4px; font-weight: bold; font-size: 11px; width: 100%; border: 1px solid #cbd5e1; cursor: not-allowed; text-align-last: center;">
+                        <option value="Pagato" {% if stato_pag == 'pagato' %}selected{% endif %} style="background: #dcfce7; color: #16a34a; font-weight: bold;">PAGATO</option>
+                        <option value="Parziale" {% if stato_pag == 'parziale' %}selected{% endif %} style="background: #fef3c7; color: #d97706; font-weight: bold;">PARZIALE</option>
+                        <option value="Non Pagato" {% if stato_pag == 'non pagato' or stato_pag == '' %}selected{% endif %} style="background: #fee2e2; color: #dc2626; font-weight: bold;">NON PAGATO</option>
+                    </select>
                 </td>
-                <td style="border: 1px solid #cbd5e1; padding: 7px 10px; text-align: center; border-right: none;">
-                    {{ f.data_pagamento or '' }}
+
+                <!-- Colonna Data Pagamento (Interattiva) -->
+                <td style="border: 1px solid #cbd5e1; padding: 7px 10px; text-align: center;">
+                    <input type="date" class="input-data-pagamento" disabled value="{{ f.data_pagamento_raw or f.data_pagamento or '' }}" onchange="salvaModificaRiga(this)" style="padding: 4px; font-size: 12px; border-radius: 4px; border: 1px solid #cbd5e1; width: 110px; cursor: not-allowed;">
+                </td>
+
+                <!-- Colonna Importo Ricevuto (Mostrata solo quando sbloccata) -->
+                <td class="colonna-importo-parziale" style="border: 1px solid #cbd5e1; padding: 7px 10px; text-align: right; display: none;">
+                    <input type="number" step="0.01" class="input-importo-parziale" disabled value="{{ f.importo_pagato or '' }}" onchange="salvaModificaRiga(this)" style="padding: 4px; font-size: 12px; border-radius: 4px; border: 1px solid #cbd5e1; width: 100px; text-align: right; cursor: not-allowed;">
                 </td>
             </tr>
             {% else %}
             <tr>
-                <td colspan="8" style="padding: 24px; text-align: center; color: #64748b; font-size: 14px;">
+                <td colspan="9" style="padding: 24px; text-align: center; color: #64748b; font-size: 14px;">
                     Nessuna fattura presente per l'anno 2026.
                 </td>
             </tr>
@@ -153,24 +177,154 @@
 </div>
 
 <script>
-// Toggle filtri
+let zoomAttuale = 1.0;
+let tabellaSbloccata = false;
+
+// Funzioni per lo zoom
+function cambiaZoom(valore) {
+    zoomAttuale = Math.max(0.6, Math.min(1.4, zoomAttuale + valore));
+    const container = document.getElementById('contenitoreTabella');
+    container.style.transform = `scale(${zoomAttuale})`;
+    container.style.width = `${100 / zoomAttuale}%`;
+}
+
+function reimpostaZoom() {
+    zoomAttuale = 1.0;
+    const container = document.getElementById('contenitoreTabella');
+    container.style.transform = 'scale(1)';
+    container.style.width = '100%';
+}
+
+// Funzione di sblocco con Password
+function gestisciSblocco() {
+    if (!tabellaSbloccata) {
+        const password = prompt("Inserisci la password di sicurezza per sbloccare la tabella:");
+        if (password === null) return;
+        
+        // Verifica temporanea lato client (sostituisci con chiamata API se necessario)
+        if (password === "1234") { 
+            tabellaSbloccata = true;
+            aggiornaStatoSblocco(true);
+        } else {
+            alert("Password errata!");
+        }
+    } else {
+        tabellaSbloccata = false;
+        aggiornaStatoSblocco(false);
+    }
+}
+
+function aggiornaStatoSblocco(sbloccato) {
+    const statoLabel = document.getElementById('statoSblocco');
+    const btnSblocca = document.getElementById('btnSblocca');
+    const selectStati = document.querySelectorAll('.selettore-stato');
+    const dateInput = document.querySelectorAll('.input-data-pagamento');
+    const importoInput = document.querySelectorAll('.input-importo-parziale');
+    const colonneParziali = document.querySelectorAll('.colonna-importo-parziale');
+
+    if (sbloccato) {
+        statoLabel.innerHTML = '<span style="width: 8px; height: 8px; background: #16a34a; border-radius: 50%; display: inline-block;"></span> Sbloccata';
+        statoLabel.style.color = '#16a34a';
+        btnSblocca.innerText = 'Blocca Tabella';
+        btnSblocca.style.backgroundColor = '#475569';
+        
+        colonneParziali.forEach(el => el.style.display = 'table-cell');
+        
+        selectStati.forEach(el => { el.disabled = false; el.style.cursor = 'default'; });
+        dateInput.forEach(el => { el.disabled = false; el.style.cursor = 'default'; });
+        importoInput.forEach(el => { el.disabled = false; el.style.cursor = 'default'; });
+    } else {
+        statoLabel.innerHTML = '<span style="width: 8px; height: 8px; background: #dc2626; border-radius: 50%; display: inline-block;"></span> Bloccata';
+        statoLabel.style.color = '#dc2626';
+        btnSblocca.innerText = 'Sblocca Tabella';
+        btnSblocca.style.backgroundColor = '#0f172a';
+        
+        colonneParziali.forEach(el => el.style.display = 'none');
+        
+        selectStati.forEach(el => { el.disabled = true; el.style.cursor = 'not-allowed'; });
+        dateInput.forEach(el => { el.disabled = true; el.style.cursor = 'not-allowed'; });
+        importoInput.forEach(el => { el.disabled = true; el.style.cursor = 'not-allowed'; });
+    }
+}
+
+// Quando si modifica lo Stato
+function gestisciCambioStato(selettore) {
+    const riga = selettore.closest('tr');
+    const inputData = riga.querySelector('.input-data-pagamento');
+    const inputImporto = riga.querySelector('.input-importo-parziale');
+    const totale = parseFloat(riga.getAttribute('data-totale'));
+    const nuovoStato = selettore.value;
+
+    if (nuovoStato === "Pagato") {
+        // Data di oggi in automatico
+        const oggi = new Date().toISOString().split('T')[0];
+        inputData.value = oggi;
+        
+        // Importo totale inserito automaticamente
+        inputImporto.value = totale;
+        
+        // Stile riga torna normale
+        riga.style.fontWeight = 'normal';
+        riga.style.backgroundColor = '';
+    } else if (nuovoStato === "Parziale") {
+        // Se parziale e non c'è valore, suggerisce 0
+        if (!inputImporto.value || parseFloat(inputImporto.value) >= totale) {
+            inputImporto.value = (totale / 2).toFixed(2);
+        }
+        riga.style.fontWeight = 'bold';
+        riga.style.backgroundColor = '#fffbeb';
+    } else { // Non Pagato
+        inputData.value = "";
+        inputImporto.value = "";
+        riga.style.fontWeight = 'bold';
+        riga.style.backgroundColor = '#fffbeb';
+    }
+
+    salvaModificaRiga(selettore);
+}
+
+// API di salvataggio in tempo reale
+function salvaModificaRiga(elemento) {
+    const riga = elemento.closest('tr');
+    const fatturaId = riga.getAttribute('data-id');
+    const stato = riga.querySelector('.selettore-stato').value;
+    const dataPagamento = riga.querySelector('.input-data-pagamento').value;
+    const importoPagato = riga.querySelector('.input-importo-parziale').value;
+
+    fetch('/api/aggiorna_stato', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            id: fatturaId,
+            stato: stato,
+            data_pagamento: dataPagamento,
+            importo_pagato: importoPagato
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (!data.success) {
+            alert("Errore durante il salvataggio dei dati: " + data.message);
+        }
+    })
+    .catch(error => {
+        console.error("Errore AJAX:", error);
+    });
+}
+
+// Codice filtri standard
 const btnToggle = document.getElementById('toggleFiltri');
 const pannello = document.getElementById('pannelloFiltri');
-
 const urlParams = new URLSearchParams(window.location.search);
 const haFiltriAttivi = urlParams.has('cliente') || urlParams.has('tipo') || urlParams.has('stato_pagamento');
 if (haFiltriAttivi) {
     pannello.style.display = 'block';
 }
-
 btnToggle.addEventListener('click', () => {
-    if (pannello.style.display === 'none') {
-        pannello.style.display = 'block';
-    } else {
-        pannello.style.display = 'none';
-    }
+    pannello.style.display = pannello.style.display === 'none' ? 'block' : 'none';
 });
-
 function azzeraFiltri() {
     window.location.href = "{{ url_for('dashboard') }}?azzera=1";
 }
@@ -179,6 +333,9 @@ function azzeraFiltri() {
 <style>
 .tabella-sheets tbody tr:hover {
     background-color: #f8fafc !important;
+}
+.selettore-stato option {
+    font-weight: bold;
 }
 </style>
 
