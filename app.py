@@ -1220,7 +1220,6 @@ def dashboard():
         clienti_lista=clienti_lista,
         password_sblocco=password_sblocco
     )
-```eof
 
 
 # ==============================================================================
