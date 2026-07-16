@@ -205,27 +205,55 @@ def index():
 
 @app.route("/fatture")
 def fatture():
+    # 1. Recupera i filtri inviati dal modulo di ricerca (GET)
+    filtro_cliente = request.args.get("cliente", "").strip() or None
+    filtro_stato = request.args.get("stato", "").strip() or None
+    filtro_tipo = request.args.get("tipo", "").strip() or None
+    
+    # Se l'utente clicca su "Reset"
+    if request.args.get("azzera"):
+        filtro_cliente = filtro_stato = filtro_tipo = None
+
     db = get_db()
     import psycopg2.extras
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
-    # Query con LEFT JOIN per calcolare nome_visualizzato
+    # 2. Query di base con LEFT JOIN per mostrare i nomi reali dei clienti
     query = """
         SELECT f.*, 
                COALESCE(c.nome, f.cliente_nome, 'Cliente Generico') as nome_visualizzato
         FROM fatture f
         LEFT JOIN clienti c ON f.cliente_id = c.id
-        ORDER BY f.data DESC, f.numero DESC
+        WHERE 1=1
     """
+    params = []
     
-    cur.execute(query)
+    # 3. Applica i filtri alla query SQL se presenti
+    if filtro_cliente:
+        query += " AND (c.nome ILIKE %s OR f.cliente_nome ILIKE %s)"
+        params.append(f"%{filtro_cliente}%")
+        params.append(f"%{filtro_cliente}%")
+    if filtro_stato:
+        query += " AND f.stato_pagamento = %s"
+        params.append(filtro_stato)
+    if filtro_tipo:
+        query += " AND f.tipo = %s"
+        params.append(filtro_tipo)
+        
+    query += " ORDER BY f.data DESC, f.numero DESC"
+    
+    cur.execute(query, params)
     elenco_fatture = cur.fetchall()
     cur.close()
     
     return render_template(
         "fatture.html", 
         fatture=elenco_fatture, 
-        password_eliminazione=PASSWORD_ACCESSO
+        password_eliminazione=PASSWORD_ACCESSO,
+        # Rimanda i valori correnti al template per mantenere i campi compilati
+        filtro_cliente=filtro_cliente or "",
+        filtro_stato=filtro_stato or "",
+        filtro_tipo=filtro_tipo or ""
     )
 
 
