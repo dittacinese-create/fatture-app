@@ -1120,18 +1120,11 @@ def delete_prodotto(prodotto_id):
 
 # ==============================================================================
 # 9. DASHBOARD & STATISTICHE
-# ==============================================================================
-
-from datetime import datetime
-
+# =============================================================================
 @app.route("/dashboard")
 def dashboard():
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    
-    # Inizializziamo le variabili diagnostiche
-    errore_rilevato = None
-    chiavi_rilevate = []
     
     # --- CORREZIONE VINCOLO DATABASE ---
     try:
@@ -1152,8 +1145,9 @@ def dashboard():
     except Exception as e:
         db.rollback()
 
-    # --- CONFIGURAZIONE DEFAULT ANNO CORRENTE (2026) ---
-    anno_corrente = 2026
+    # --- CONFIGURAZIONE AUTO-RILEVATA DELL'ANNO CORRENTE ---
+    # Rileva automaticamente l'anno di oggi in modo che mostri sempre i dati corretti
+    anno_corrente = datetime.now().year
     default_inizio = f"{anno_corrente}-01-01"
     default_fine = f"{anno_corrente}-12-31"
 
@@ -1174,10 +1168,10 @@ def dashboard():
         date_inizio_filtro = datetime.strptime(filtro_inizio, "%Y-%m-%d").date()
         date_fine_filtro = datetime.strptime(filtro_fine, "%Y-%m-%d").date()
     except Exception:
-        date_inizio_filtro = datetime(2026, 1, 1).date()
-        date_fine_filtro = datetime(2026, 12, 31).date()
+        date_inizio_filtro = datetime(anno_corrente, 1, 1).date()
+        date_fine_filtro = datetime(anno_corrente, 12, 31).date()
 
-    # Carichiamo TUTTE le fatture e facciamo il filtro in Python in modo da analizzare la struttura
+    # Carichiamo tutte le fatture
     query = """
         SELECT f.*, 
                COALESCE(c.nome, f.cliente) as cliente_nome
@@ -1195,15 +1189,11 @@ def dashboard():
         cur.execute(query)
         tutte_le_fatture = cur.fetchall()
 
-        if tutte_le_fatture:
-            # Salviamo le chiavi reali del record per scopi di debug se la tabella è vuota
-            chiavi_rilevate = list(tutte_le_fatture[0].keys())
-
         for f in tutte_le_fatture:
-            # Cerchiamo in modo flessibile il campo data
-            data_str = str(f.get('data_fattura') or f.get('data') or '').strip()
-            
+            # parsing data flessibile
+            data_str = str(f.get('data_fattura') or f.get('data') or f.get('data_inserimento') or '').strip()
             data_valida = None
+            
             for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
                 try:
                     data_valida = datetime.strptime(data_str, fmt).date()
@@ -1211,29 +1201,22 @@ def dashboard():
                 except ValueError:
                     continue
 
-            # Se non riusciamo ad interpretare la data, non escludiamo a priori la fattura ma la mostriamo comunque
-            # per evitare di nascondere righe all'utente (assegniamo una data fittizia del 2026)
-            if not data_valida:
-                try:
-                    # Tentativo estremo: se c'è scritto "2026" nella stringa della data
-                    if "2026" in data_str:
-                        data_valida = datetime(2026, 7, 15).date()
-                except Exception:
-                    pass
-
+            # Se non c'è una data interpretabile, la includiamo comunque per non perdere righe
             if data_valida:
-                # Applichiamo il filtro sulle date
+                # Applichiamo il filtro dinamico sulle date
                 if data_valida < date_inizio_filtro or data_valida > date_fine_filtro:
                     continue
 
-            # Applichiamo i filtri testuali direttamente in Python in modo sicuro
+            # Filtro tipologia
             if filtro_tipo and str(f.get('tipologia') or '').strip().upper() != filtro_tipo.upper():
                 continue
                 
+            # Filtro cliente
             cliente_reale = str(f.get('cliente_nome') or f.get('cliente') or '').strip().lower()
             if filtro_cliente and filtro_cliente.lower() not in cliente_reale:
                 continue
 
+            # Filtro stato pagamento
             stato_pag = str(f.get('stato_pagamento') or '').strip().lower()
             if filtro_stato:
                 filtro_stato_f = filtro_stato.lower()
@@ -1246,7 +1229,7 @@ def dashboard():
 
             fatture_filtrate.append(f)
 
-            # Calcolo dei totali
+            # Calcolo dei totali con gestione robusta delle stringhe
             importo_val = f.get('importo_totale') or f.get('importo') or f.get('totale') or 0
             if isinstance(importo_val, str):
                 try:
@@ -1273,7 +1256,7 @@ def dashboard():
 
     except Exception as e:
         db.rollback()
-        errore_rilevato = str(e)
+        print(f"Errore caricamento dati: {e}")
     finally:
         cur.close()
         
@@ -1289,10 +1272,8 @@ def dashboard():
         filtro_tipo=filtro_tipo,
         filtro_cliente=filtro_cliente,
         filtro_stato=filtro_stato,
-        errore_debug=errore_rilevato,
-        chiavi_debug=chiavi_rilevate
+        anno_corrente=anno_corrente
     )
-
 # ==============================================================================
 # 10.NOTE 
 # ==============================================================================
