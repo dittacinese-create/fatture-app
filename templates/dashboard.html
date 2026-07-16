@@ -110,40 +110,35 @@
             {% for f in fatture %}
             <tr style="border-bottom: 1px solid #cbd5e1; {% if loop.index is odd %}background-color: #fafafa;{% endif %}">
                 <td style="border: 1px solid #cbd5e1; padding: 7px 10px; font-weight: bold; text-align: center;">
-                    {{ f.numero_fattura or f.numero or f.id }}
+                    {{ f.numero_fattura or '' }}
                 </td>
                 <td style="border: 1px solid #cbd5e1; padding: 7px 10px;">
                     {{ f.cliente_nome or 'Cliente Generico' }}
                 </td>
                 <td style="border: 1px solid #cbd5e1; padding: 7px 10px; text-align: center;">
-                    {{ f.data_fattura or f.data or '' }}
+                    {{ f.data_fattura or '' }}
                 </td>
                 <td style="border: 1px solid #cbd5e1; padding: 7px 10px; text-align: center;">
-                    {{ f.data_scadenza or f.scadenza or '' }}
+                    {{ f.data_scadenza or '' }}
                 </td>
                 <td style="border: 1px solid #cbd5e1; padding: 7px 10px; text-align: right; font-weight: 500;">
-                    {% set imp = f.importo_totale or f.importo or f.totale or 0 %}
-                    {% if imp is string %}
-                        {{ imp }}
-                    {% else %}
-                        {{ "{:,.2f}".format(imp | float).replace(',', 'X').replace('.', ',').replace('X', '.') }}
-                    {% endif %}
+                    € {{ "{:,.2f}".format(f.importo_totale | float).replace(',', 'X').replace('.', ',').replace('X', '.') }}
                 </td>
                 <td style="border: 1px solid #cbd5e1; padding: 7px 10px;">
-                    {{ f.note or f.cantiere or '' }}
+                    {{ f.note or '' }}
                 </td>
                 <td style="border: 1px solid #cbd5e1; padding: 7px 10px; font-weight: bold; text-align: center;">
-                    {% set stato_pag = (f.stato_pagamento or 'Non Pagato') | lower %}
+                    {% set stato_pag = f.stato_pagamento | lower %}
                     {% if stato_pag == 'pagato' %}
                         <span style="background-color: #dcfce7; color: #16a34a; padding: 4px 10px; border-radius: 4px; display: inline-block; font-size: 11px;">PAGATO</span>
-                    {% elif stato_pag in ['parziale', 'parzialmente pagato'] %}
+                    {% elif stato_pag == 'parziale' %}
                         <span style="background-color: #fef3c7; color: #d97706; padding: 4px 10px; border-radius: 4px; display: inline-block; font-size: 11px;">PARZIALE</span>
                     {% else %}
                         <span style="background-color: #fee2e2; color: #dc2626; padding: 4px 10px; border-radius: 4px; display: inline-block; font-size: 11px;">NON PAGATO</span>
                     {% endif %}
                 </td>
                 <td style="border: 1px solid #cbd5e1; padding: 7px 10px; text-align: center; border-right: none;">
-                    {{ f.data_pagamento or f.pagato_il or '' }}
+                    {{ f.data_pagamento or '' }}
                 </td>
             </tr>
             {% else %}
