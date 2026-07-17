@@ -54,6 +54,10 @@ def importa():
     print("🚀 Inizio importazione dello storico...")
     
     try:
+        print("🧹 Pulizia vecchi dati in corso...")
+        cur.execute("TRUNCATE TABLE righe_fattura, righe_ddt, ddt, fatture, clienti CASCADE;")
+        conn.commit()
+        
         for f in STORICO_FATTURE:
             # Controlla se il cliente esiste, altrimenti lo crea
             cur.execute("SELECT id FROM clienti WHERE nome = %s;", (f["cliente"],))

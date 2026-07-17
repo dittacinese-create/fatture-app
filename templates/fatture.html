@@ -16,15 +16,18 @@
                oninput="filtraFatture()"
                autocomplete="off">
     </div>
+    
+    <!-- Modificato: i valori ora corrispondono a quelli della Dashboard (minuscoli) -->
     <select id="filtro_stato" onchange="filtraFatture()"
-            style="padding:8px 12px; border:1px solid #d0d5dd; border-radius:8px; font-size:13.5px; background:#fff; color:#1a1a2e;">
+            style="padding:8px 12px; border:1px solid #d0d5dd; border-radius:8px; font-size:13.5px; background:#fff; color:#1a1a2e; cursor:pointer;">
         <option value="">Tutti gli stati</option>
-        <option value="Non pagata">Non pagata</option>
-        <option value="In attesa">In attesa</option>
-        <option value="Pagata">Pagata</option>
+        <option value="pagato">Pagata</option>
+        <option value="parziale">Parziale</option>
+        <option value="non pagata">Non pagata</option>
     </select>
+
     <select id="filtro_tipo" onchange="filtraFatture()"
-            style="padding:8px 12px; border:1px solid #d0d5dd; border-radius:8px; font-size:13.5px; background:#fff; color:#1a1a2e;">
+            style="padding:8px 12px; border:1px solid #d0d5dd; border-radius:8px; font-size:13.5px; background:#fff; color:#1a1a2e; cursor:pointer;">
         <option value="">Tutti i tipi</option>
         <option value="FORNITURA">Fornitura</option>
         <option value="MANUALE">Manuale</option>
@@ -51,9 +54,13 @@
             {% for f in fatture %}
             {% set data_fmt = f.data[8:10] + '/' + f.data[5:7] + '/' + f.data[0:4] if f.data else '—' %}
             {% set scad_fmt = f.data_scadenza[8:10] + '/' + f.data_scadenza[5:7] + '/' + f.data_scadenza[0:4] if f.data_scadenza else '—' %}
+            
+            {# Normalizzazione dello stato per il dataset (in minuscolo) #}
+            {% set stato_normalizzato = (f.stato_pagamento or 'non pagata')|lower %}
+            
             <tr class="riga-dati" 
                 data-cliente="{{ f.cliente_nome|lower }}"
-                data-stato="{{ f.stato_pagamento or 'Non pagata' }}"
+                data-stato="{{ stato_normalizzato }}"
                 data-tipo="{{ f.tipo }}">
                 <td><strong>{{ f.numero }}</strong></td>
                 <td>{{ data_fmt }}</td>
@@ -70,15 +77,20 @@
                 <td style="max-width:140px; color:#6b7280; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                     {{ f.note or "—" }}
                 </td>
+                
+                <!-- Aggiornata la colonna Pagamento con gli stati e i colori della Dashboard -->
                 <td>
-                    {% if f.stato_pagamento == "Pagata" %}
+                    {% if stato_normalizzato == "pagato" %}
                     <span class="badge badge-pagata">Pagata</span>
-                    {% elif f.stato_pagamento == "In attesa" %}
-                    <span class="badge badge-attesa">In attesa</span>
+                    {% elif stato_normalizzato == "parziale" %}
+                    <span class="badge badge-attesa" style="background-color: #fef9c3; color: #a16207;">
+                        Parziale ({{ "€ %.2f"|format(f.totale_pagato or 0) }})
+                    </span>
                     {% else %}
                     <span class="badge badge-non-pagata">Non pagata</span>
                     {% endif %}
                 </td>
+                
                 <td style="white-space:nowrap;">
                     <a href="/fattura/{{ f.id }}" class="action-link">Apri</a>
                     {% if f.stato == "CHIUSA" %}
@@ -99,7 +111,6 @@
             </tr>
             {% endfor %}
             
-            <!-- Spostato dentro la tabella per mantenere coerente il layout -->
             <tr id="nessun_risultato" style="display:none;">
                 <td colspan="9" style="text-align:center; color:#9ca3af; padding:2rem;">
                     Nessuna fattura corrisponde ai filtri impostati.
@@ -110,33 +121,30 @@
 </div>
 
 <script>
-// Password passata dinamicamente da config.py tramite Flask
 const passwordCorretta = "{{ password_eliminazione }}";
 
 function richiediPasswordEliminazione(numeroFattura) {
-    // Prima conferma
     if (!confirm("Sei sicuro di voler eliminare la fattura n. " + numeroFattura + "?")) {
         return false;
     }
     
-    // Richiesta password
     const passwordInserita = prompt("Inserisci la password di sicurezza per completare l'eliminazione:");
     
     if (passwordInserita === null) {
-        return false; // L'utente ha cliccato "Annulla"
+        return false; 
     }
     
     if (passwordInserita === passwordCorretta) {
-        return true; // Password valida, procede
+        return true; 
     } else {
         alert("Password errata! Eliminazione annullata.");
-        return false; // Password non valida
+        return false; 
     }
 }
 
 function filtraFatture() {
     var cliente = document.getElementById("filtro_cliente").value.toLowerCase().trim();
-    var stato = document.getElementById("filtro_stato").value;
+    var stato = document.getElementById("filtro_stato").value; // Riceve i valori 'pagato', 'parziale', 'non pagata'
     var tipo = document.getElementById("filtro_tipo").value;
     
     var righe = document.querySelectorAll("#tabella_fatture tbody tr.riga-dati");
