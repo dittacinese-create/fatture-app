@@ -17,7 +17,6 @@
                autocomplete="off">
     </div>
     
-    <!-- Modificato: i valori ora corrispondono a quelli della Dashboard (minuscoli) -->
     <select id="filtro_stato" onchange="filtraFatture()"
             style="padding:8px 12px; border:1px solid #d0d5dd; border-radius:8px; font-size:13.5px; background:#fff; color:#1a1a2e; cursor:pointer;">
         <option value="">Tutti gli stati</option>
@@ -26,11 +25,12 @@
         <option value="non pagata">Non pagata</option>
     </select>
 
+    <!-- Aggiornati i valori del filtro in minuscolo per il JavaScript -->
     <select id="filtro_tipo" onchange="filtraFatture()"
             style="padding:8px 12px; border:1px solid #d0d5dd; border-radius:8px; font-size:13.5px; background:#fff; color:#1a1a2e; cursor:pointer;">
         <option value="">Tutti i tipi</option>
-        <option value="FORNITURA">Fornitura</option>
-        <option value="MANUALE">Manuale</option>
+        <option value="fornitura">Fornitura</option>
+        <option value="manuale">Manuale</option>
     </select>
     <button onclick="resetFiltri()" class="btn" style="font-size:13px;">✕ Reset</button>
 </div>
@@ -55,34 +55,39 @@
             {% set data_fmt = f.data[8:10] + '/' + f.data[5:7] + '/' + f.data[0:4] if f.data else '—' %}
             {% set scad_fmt = f.data_scadenza[8:10] + '/' + f.data_scadenza[5:7] + '/' + f.data_scadenza[0:4] if f.data_scadenza else '—' %}
             
-            {# Normalizzazione dello stato per il dataset (in minuscolo) #}
             {% set stato_normalizzato = (f.stato_pagamento or 'non pagata')|lower %}
             
-            <!-- Modificato: data-cliente ora usa correttamente f.nome_visualizzato per la ricerca istantanea -->
+            {# Rilevamento automatico: se il tipo è FORNITURA oppure se la nota contiene 'fornitura', lo consideriamo FORNITURA #}
+            {% set note_lower = (f.note or '')|lower %}
+            {% if f.tipo == "FORNITURA" or "fornitura" in note_lower %}
+                {% set tipo_effettivo = "fornitura" %}
+            {% else %}
+                {% set tipo_effettivo = "manuale" %}
+            {% endif %}
+            
             <tr class="riga-dati" 
                 data-cliente="{{ f.nome_visualizzato|lower if f.nome_visualizzato else (f.cliente_nome|lower or '') }}"
                 data-stato="{{ stato_normalizzato }}"
-                data-tipo="{{ f.tipo }}">
+                data-tipo="{{ tipo_effettivo }}">
                 <td><strong>{{ f.numero }}</strong></td>
                 <td>{{ data_fmt }}</td>
-                
-                <!-- Modificato: visualizza f.nome_visualizzato per evitare che esca sempre "Cliente Generico" -->
                 <td>{{ f.nome_visualizzato if f.nome_visualizzato else (f.cliente_nome or 'Cliente Generico') }}</td>
                 
+                <!-- Mostra il badge corretto in base al tipo reale/rilevato -->
                 <td>
-                    {% if f.tipo == "FORNITURA" %}
+                    {% if tipo_effettivo == "fornitura" %}
                     <span class="badge badge-fornitura">Fornitura</span>
                     {% else %}
                     <span class="badge badge-manuale">Manuale</span>
                     {% endif %}
                 </td>
+                
                 <td><strong>€ {{ "%.2f"|format(f.totale if f.totale else 0) }}</strong></td>
                 <td style="color:#6b7280; font-size:13px;">{{ scad_fmt }}</td>
                 <td style="max-width:140px; color:#6b7280; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                     {{ f.note or "—" }}
                 </td>
                 
-                <!-- Aggiornata la colonna Pagamento con gli stati e i colori della Dashboard -->
                 <td>
                     {% if stato_normalizzato == "pagato" %}
                     <span class="badge badge-pagata">Pagata</span>
@@ -148,7 +153,7 @@ function richiediPasswordEliminazione(numeroFattura) {
 
 function filtraFatture() {
     var cliente = document.getElementById("filtro_cliente").value.toLowerCase().trim();
-    var stato = document.getElementById("filtro_stato").value; // Riceve i valori 'pagato', 'parziale', 'non pagata'
+    var stato = document.getElementById("filtro_stato").value; 
     var tipo = document.getElementById("filtro_tipo").value;
     
     var righe = document.querySelectorAll("#tabella_fatture tbody tr.riga-dati");
