@@ -58,13 +58,17 @@
             {# Normalizzazione dello stato per il dataset (in minuscolo) #}
             {% set stato_normalizzato = (f.stato_pagamento or 'non pagata')|lower %}
             
+            <!-- Modificato: data-cliente ora usa correttamente f.nome_visualizzato per la ricerca istantanea -->
             <tr class="riga-dati" 
-                data-cliente="{{ f.cliente_nome|lower }}"
+                data-cliente="{{ f.nome_visualizzato|lower if f.nome_visualizzato else (f.cliente_nome|lower or '') }}"
                 data-stato="{{ stato_normalizzato }}"
                 data-tipo="{{ f.tipo }}">
                 <td><strong>{{ f.numero }}</strong></td>
                 <td>{{ data_fmt }}</td>
-                <td>{{ f.cliente_nome }}</td>
+                
+                <!-- Modificato: visualizza f.nome_visualizzato per evitare che esca sempre "Cliente Generico" -->
+                <td>{{ f.nome_visualizzato if f.nome_visualizzato else (f.cliente_nome or 'Cliente Generico') }}</td>
+                
                 <td>
                     {% if f.tipo == "FORNITURA" %}
                     <span class="badge badge-fornitura">Fornitura</span>
