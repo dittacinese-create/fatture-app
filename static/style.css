@@ -214,13 +214,14 @@ body {
     background: #ffffff;
     border-radius: 12px;
     border: 1px solid #e8ecf0;
-    overflow-x: auto; /* Attiva lo scorrimento orizzontale se la tabella supera lo schermo */
-    -webkit-overflow-scrolling: touch; /* Rende lo scorrimento fluido sui dispositivi touch */
+    overflow-x: auto; /* Attiva lo scorrimento orizzontale se la tabella è troppo larga */
+    width: 100%;
+    -webkit-overflow-scrolling: touch;
 }
 
 table {
     width: 100%;
-    min-width: 900px; /* Forza una larghezza minima vitale per non schiacciare i dati */
+    min-width: 1000px; /* Forza la tabella a rimanere larga abbastanza da mostrare tutte le colonne e le azioni */
     border-collapse: collapse;
     font-size: 13.5px;
 }
@@ -309,12 +310,12 @@ tbody tr:hover td {
 
 .form-row {
     display: flex;
-    flex-wrap: wrap; /* Consente ai campi di scendere sotto se lo spazio finisce */
+    flex-wrap: wrap; /* Consente ai campi di scendere sotto se la finestra si stringe */
     gap: 1rem;
 }
 
 .form-row .form-group {
-    flex: 1 1 200px; /* Permette al campo di ridimensionarsi, impostando una larghezza minima di 200px */
+    flex: 1 1 200px; /* I campi si stringono e si allargano fluidamente, mantenendo un minimo di 200px */
 }
 
 /* ========================= */
