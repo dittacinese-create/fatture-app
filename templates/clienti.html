@@ -7,33 +7,34 @@
 
 <div class="card">
     <h2 style="font-size:15px; font-weight:600; margin-bottom:1rem; color:#1a1a2e;">Nuovo cliente</h2>
-    <form method="POST" action="/clienti">
+    <!-- Rimosso l'action nativo per gestire l'invio e il backup asincrono tramite JS -->
+    <form id="form_nuovo_cliente" onsubmit="creaNuovoCliente(event)">
         <div class="form-row">
             <div class="form-group">
                 <label>Nome / Ragione sociale *</label>
-                <input name="nome" placeholder="es. ALPE S.R.L." required>
+                <input name="nome" id="n_nome" placeholder="es. ALPE S.R.L." required>
             </div>
             <div class="form-group">
                 <label>Indirizzo</label>
-                <input name="indirizzo" placeholder="Via, città, CAP">
+                <input name="indirizzo" id="n_ind" placeholder="Via, città, CAP">
             </div>
         </div>
         <div class="form-row">
             <div class="form-group">
                 <label>P.IVA</label>
-                <input name="partita_iva" placeholder="00000000000">
+                <input name="partita_iva" id="n_piva" placeholder="00000000000">
             </div>
             <div class="form-group">
                 <label>Codice Fiscale</label>
-                <input name="codice_fiscale" placeholder="Codice fiscale">
+                <input name="codice_fiscale" id="n_cf" placeholder="Codice fiscale">
             </div>
             <div class="form-group">
                 <label>Codice SDI</label>
-                <input name="codice_sdi" placeholder="es. WHP7LTE">
+                <input name="codice_sdi" id="n_sdi" placeholder="es. WHP7LTE">
             </div>
             <div class="form-group">
                 <label>PEC</label>
-                <input name="pec" placeholder="email@pec.it">
+                <input name="pec" id="n_pec" placeholder="email@pec.it">
             </div>
         </div>
         <button type="submit" class="btn btn-primary">Salva cliente</button>
@@ -112,6 +113,16 @@
 </div>
 
 <script>
+// Funzione helper per forzare lo scaricamento del file TXT
+function scaricaBackupClienti() {
+    const link = document.createElement('a');
+    link.href = '/export_clienti_backup';
+    link.download = 'backup_clienti.txt';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
 function cercaCliente() {
     const query = document.getElementById("search_cliente").value.toLowerCase();
     document.querySelectorAll("#tabella_clienti tbody tr").forEach(function(r) {
@@ -137,6 +148,37 @@ function annullaCliente(id) {
     document.getElementById("btn_mc_" + id).style.display = "inline";
     document.getElementById("btn_sc_" + id).style.display = "none";
     document.getElementById("btn_ac_" + id).style.display = "none";
+}
+
+// Inserimento asincrono per permettere il download del backup prima del ricaricamento pagina
+function creaNuovoCliente(event) {
+    event.preventDefault();
+    
+    const formData = new FormData();
+    formData.append("nome", document.getElementById("n_nome").value);
+    formData.append("indirizzo", document.getElementById("n_ind").value);
+    formData.append("partita_iva", document.getElementById("n_piva").value);
+    formData.append("codice_fiscale", document.getElementById("n_cf").value);
+    formData.append("codice_sdi", document.getElementById("n_sdi").value);
+    formData.append("pec", document.getElementById("n_pec").value);
+
+    fetch("/clienti", {
+        method: "POST",
+        body: formData
+    })
+    .then(response => {
+        if (response.ok) {
+            scaricaBackupClienti();
+            // Piccolo timeout per dare il tempo al browser di avviare il processo di download prima del refresh
+            setTimeout(() => { window.location.reload(); }, 400);
+        } else {
+            alert("Errore durante la creazione del cliente.");
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        alert("Errore di rete.");
+    });
 }
 
 function salvaCliente(id) {
@@ -173,6 +215,9 @@ function salvaCliente(id) {
             document.getElementById("c_sdi_" + id).innerHTML = codice_sdi ? '<span class="badge badge-fornitura">' + codice_sdi + '</span>' : '';
             document.getElementById("c_pec_" + id).textContent = pec;
             annullaCliente(id);
+            
+            // Avvia il backup automatico post modifica
+            scaricaBackupClienti();
         } else {
             alert("Errore durante il salvataggio del cliente.");
         }

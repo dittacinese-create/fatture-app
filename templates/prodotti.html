@@ -7,19 +7,19 @@
 
 <div class="card">
     <h2 style="font-size:15px; font-weight:600; margin-bottom:1rem; color:#1a1a2e;">Nuovo prodotto</h2>
-    <form method="POST" action="/prodotti">
+    <form id="form_nuovo_prodotto" onsubmit="creaNuovoProdotto(event)">
         <div class="form-row" style="align-items:flex-end;">
             <div class="form-group" style="flex:2;">
                 <label>Nome prodotto *</label>
-                <input name="nome" placeholder="es. Quadrettoni 80x80 sp 3/5 misto" required>
+                <input name="nome" id="n_nome_prodotto" placeholder="es. Quadrettoni 80x80 sp 3/5 misto" required>
             </div>
             <div class="form-group" style="max-width:120px;">
                 <label>Prezzo (€) *</label>
-                <input type="number" step="0.01" name="prezzo_base" placeholder="0.00" required>
+                <input type="number" step="0.01" name="prezzo_base" id="n_prezzo_base" placeholder="0.00" required>
             </div>
             <div class="form-group" style="max-width:110px;">
                 <label>U.M. *</label>
-                <select name="unita_misura">
+                <select name="unita_misura" id="n_unita_misura">
                     <option value="mq">mq</option>
                     <option value="pz">pz</option>
                     <option value="gg">gg</option>
@@ -98,6 +98,16 @@
 </div>
 
 <script>
+// Funzione helper per forzare lo scaricamento del file TXT dei prodotti
+function scaricaBackupProdotti() {
+    const link = document.createElement('a');
+    link.href = '/export_prodotti_backup';
+    link.download = 'backup_prodotti.txt';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
 function cercaProdotto() {
     const query = document.getElementById("search_prodotto").value.toLowerCase();
     document.querySelectorAll("#tabella_prodotti tbody tr").forEach(function(r) {
@@ -129,6 +139,33 @@ function annullaProdotto(id) {
     document.getElementById("btn_annulla_" + id).style.display = "none";
 }
 
+// Inserimento asincrono per consentire il download del file prima del refresh
+function creaNuovoProdotto(event) {
+    event.preventDefault();
+
+    const formData = new FormData();
+    formData.append("nome", document.getElementById("n_nome_prodotto").value);
+    formData.append("prezzo_base", document.getElementById("n_prezzo_base").value);
+    formData.append("unita_misura", document.getElementById("n_unita_misura").value);
+
+    fetch("/prodotti", {
+        method: "POST",
+        body: formData
+    })
+    .then(response => {
+        if (response.ok) {
+            scaricaBackupProdotti();
+            setTimeout(() => { window.location.reload(); }, 400);
+        } else {
+            alert("Errore durante la creazione del prodotto.");
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        alert("Errore di rete.");
+    });
+}
+
 function salvaProdotto(id) {
     const nome = document.getElementById("input_nome_" + id).value;
     const prezzo = document.getElementById("input_prezzo_" + id).value;
@@ -144,7 +181,15 @@ function salvaProdotto(id) {
             document.getElementById("um_" + id).textContent = um;
             document.getElementById("prezzo_" + id).textContent = "€ " + parseFloat(prezzo).toFixed(2);
             annullaProdotto(id);
+            
+            // Avvia il backup automatico post modifica
+            scaricaBackupProdotti();
+        } else {
+            alert("Errore durante il salvataggio del prodotto.");
         }
+    }).catch(err => {
+        console.error(err);
+        alert("Errore di rete.");
     });
 }
 </script>

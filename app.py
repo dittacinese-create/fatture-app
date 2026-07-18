@@ -4,6 +4,8 @@ import psycopg2
 import psycopg2.extras
 from flask import Flask, render_template, request, redirect, url_for, g, jsonify, flash
 from config import BANCHE, PASSWORD_ACCESSO
+from flask import Response
+import json
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "chiave-segreta-temporanea")
@@ -1463,7 +1465,82 @@ def elimina_nota_api(id):
         cur.close()
 
 # ==============================================================================
-# 12. AVVIO APPLICAZIONE
+# 12. DOWNLOAD DATI CLIENTI, PRODOTTI, FATTURE
+# ==============================================================================
+
+@app.route("/export_clienti_backup")
+def export_clienti_backup():
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    cur.execute("SELECT * FROM clienti ORDER BY nome ASC")
+    clienti = cur.fetchall()
+    cur.close()
+    
+    # Crea un file di testo formattato in modo leggibile
+    output = "=== LISTA CLIENTI ===\n\n"
+    for c in clienti:
+        output += f"ID: {c['id']}\nNome: {c['nome']}\nPartita IVA: {c.get('partita_iva','')}\nCodice Fiscale: {c.get('codice_fiscale','')}\nEmail: {c.get('email','')}\nTelefono: {c.get('telefono','')}\nIndirizzo: {c.get('indirizzo','')}\n----------------------------------------\n"
+    
+    return Response(output, mimetype="text/plain", headers={"Content-Disposition": "attachment;filename=backup_clienti.txt"})
+
+@app.route("/export_prodotti_backup")
+def export_prodotti_backup():
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    cur.execute("SELECT * FROM prodotti ORDER BY nome ASC")
+    prodotti = cur.fetchall()
+    cur.close()
+    
+    output = "=== LISTA PRODOTTI ===\n\n"
+    for p in prodotti:
+        output += f"ID: {p['id']}\nNome: {p['nome']}\nUnità di Misura: {p['unita_misura']}\nPrezzo Base: €{p['prezzo_base']:.2f}\n----------------------------------------\n"
+    
+    return Response(output, mimetype="text/plain", headers={"Content-Disposition": "attachment;filename=backup_prodotti.txt"})
+
+@app.route("/export_fattura_backup/<int:fattura_id>")
+def export_fattura_backup(fattura_id):
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    
+    cur.execute("SELECT * FROM fatture WHERE id = %s", (fattura_id,))
+    f = cur.fetchone()
+    
+    if not f:
+        cur.close()
+        return "Fattura non trovata", 404
+        
+    cur.execute("SELECT * FROM clienti WHERE id = %s", (f["cliente_id"],))
+    c = cur.fetchone()
+    
+    output = f"=== DETTAGLIO FATTURA N. {f.get('numero','-')} DEL {f.get('data','-')} ===\n"
+    output += f"Stato: {f['stato_pagamento']}\n"
+    output += f"Tipo: {f['tipo']}\n"
+    if c:
+        output += f"Cliente: {c['nome']} (P.IVA: {c.get('partita_iva','')})\n"
+    output += f"Totale Fattura: €{f.get('totale', 0.0):.2f}\n"
+    output += "----------------------------------------\n\n"
+    
+    if f["tipo"] == "FORNITURA":
+        cur.execute("SELECT * FROM ddt WHERE fattura_id = %s ORDER BY id ASC", (fattura_id,))
+        ddts = cur.fetchall()
+        for d in ddts:
+            output += f">> DDT N. {d['numero']} del {d['data']}\n"
+            cur.execute("SELECT * FROM righe_ddt WHERE ddt_id = %s ORDER BY id ASC", (d['id'],))
+            righe = cur.fetchall()
+            for r in righe:
+                output += f"   - {r['descrizione']}: {r['quantita']} {r['unita_misura']} x €{r['prezzo']:.2f} = €{r['quantita']*r['prezzo']:.2f}\n"
+            output += "\n"
+    else:
+        cur.execute("SELECT * FROM righe_fattura WHERE fattura_id = %s ORDER BY id ASC", (fattura_id,))
+        righe = cur.fetchall()
+        for r in righe:
+            output += f" - {r['descrizione']}: {r['quantita']} x €{r['prezzo_unitario']:.2f}\n"
+            
+    cur.close()
+    return Response(output, mimetype="text/plain", headers={"Content-Disposition": f"attachment;filename=backup_fattura_{fattura_id}.txt"})
+
+# ==============================================================================
+# 13. AVVIO APPLICAZIONE
 # ==============================================================================
 
 if __name__ == "__main__":

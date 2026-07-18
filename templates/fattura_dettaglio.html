@@ -428,6 +428,7 @@ async function salvaFatturaUnificato() {
     btn.textContent = "Salvataggio...";
 
     const noteVal = document.getElementById("note").value;
+    const statoPagamentoVal = document.getElementById("stato_pagamento").value;
 
     try {
         const resTestata = await fetch("/aggiorna_testata/{{ fattura.id }}", {
@@ -444,7 +445,7 @@ async function salvaFatturaUnificato() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                stato_pagamento: document.getElementById("stato_pagamento").value,
+                stato_pagamento: statoPagamentoVal,
                 totale_pagato: parseFloat(document.getElementById("totale_pagato").value) || 0.0,
                 data_scadenza: document.getElementById("data_scadenza").value || null,
                 data_pagamento: document.getElementById("data_pagamento").value || null,
@@ -454,6 +455,18 @@ async function salvaFatturaUnificato() {
 
         if (resTestata.ok && resPagamento.ok) {
             s.style.display = "inline";
+
+            // Se la fattura viene salvata o spostata in stato CHIUSA, scarica il backup delle informazioni
+            if (statoPagamentoVal === "CHIUSA") {
+                const link = document.createElement('a');
+                link.href = '/export_fattura_backup/{{ fattura.id }}';
+                link.download = 'backup_fattura_{{ fattura.id }}.txt';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+
+            // Piccolo timeout per consentire l'avvio del download prima del reload
             setTimeout(function() { window.location.reload(); }, 800);
         } else {
             alert("Si è verificato un errore durante il salvataggio.");
