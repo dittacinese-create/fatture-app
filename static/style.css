@@ -221,7 +221,7 @@ body {
 
 table {
     width: 100%;
-    min-width: 1000px; /* Forza la tabella a rimanere larga abbastanza da mostrare tutte le colonne e le azioni */
+    min-width: 1200px; /* Aumentato da 1000px a 1200px per non tagliare le azioni delle fatture */
     border-collapse: collapse;
     font-size: 13.5px;
 }
