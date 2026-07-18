@@ -221,7 +221,7 @@ body {
 
 table {
     width: 100%;
-    min-width: 1200px; /* Aumentato da 1000px a 1200px per non tagliare le azioni delle fatture */
+    min-width: 800px; 
     border-collapse: collapse;
     font-size: 13.5px;
 }
