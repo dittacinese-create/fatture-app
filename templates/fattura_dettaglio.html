@@ -351,15 +351,15 @@
 
 <script>
 function gestisciChiudiFattura(fatturaId) {
-    // Prima avviamo il download del backup
+    // Avviamo il download del backup completo di tutto il registro
     const link = document.createElement('a');
     link.href = '/export_fattura_backup/' + fatturaId;
-    link.download = 'backup_fattura_' + fatturaId + '.txt';
+    link.download = 'backup_registro_completo.txt'; // Cambiato il nome del file scaricato
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
 
-    // Aspettiamo mezzo secondo per essere sicuri che il browser avvii il download, poi procediamo alla rotta di chiusura
+    // Aspettiamo mezzo secondo per consentire al browser di avviare il file e poi reindirizziamo
     setTimeout(function() {
         window.location.href = "/chiudi_fattura/" + fatturaId;
     }, 500);

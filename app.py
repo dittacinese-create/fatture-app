@@ -1498,36 +1498,47 @@ def export_prodotti_backup():
     return Response(output, mimetype="text/plain", headers={"Content-Disposition": "attachment;filename=backup_prodotti.txt"})
 
 @app.route("/export_fattura_backup/<int:fattura_id>")
-# Se usi Flask-Login aggiungi qui sotto: @login_required
+# Se usi Flask-Login ricordati di decommentare: @login_required
 def export_fattura_backup(fattura_id):
-    # La rotta deve semplicemente generare il file usando la stessa sessione
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
-    cur.execute("SELECT * FROM fatture WHERE id = %s", (fattura_id,))
-    f = cur.fetchone()
+    # Estraiamo TUTTE le fatture ordinate in modo cronologico inverso (dalla più recente alla più vecchia)
+    # unendo i dati del cliente collegato
+    query = """
+        SELECT f.*, c.nome AS cliente_nome 
+        FROM fatture f
+        LEFT JOIN clienti c ON f.cliente_id = c.id
+        ORDER BY f.data DESC, f.id DESC
+    """
+    cur.execute(query)
+    tutte_fatture = cur.fetchall()
     
-    if not f:
+    if not tutte_fatture:
         cur.close()
-        return "Fattura non trovata", 404
+        return "Nessuna fattura trovata", 404
+
+    # Intestazione del file globale
+    output = "=========================================================================================\n"
+    output += "                           REPORT GENERALE BACKUP FATTURE                                \n"
+    output += "=========================================================================================\n\n"
+    
+    for f in tutte_fatture:
+        output += f"N. FATTURA: {f.get('numero', '-')} | DATA: {f.get('data', '-')}\n"
+        output += f"CLIENTE:    {f.get('cliente_nome', 'Sconosciuto')}\n"
+        output += f"IMPORTO:    € {f.get('totale', 0.0):.2f}\n"
+        output += f"STATO PAG.: {f.get('stato_pagamento', '-')}\n"
+        output += f"NOTE/CANT.: {f.get('note', '') or '-'}\n"
+        output += "-----------------------------------------------------------------------------------------\n"
         
-    cur.execute("SELECT * FROM clienti WHERE id = %s", (f["cliente_id"],))
-    c = cur.fetchone()
-    
-    output = f"=== DETTAGLIO FATTURA N. {f.get('numero','-')} DEL {f.get('data','-')} ===\n"
-    output += f"Stato Pagamento: {f['stato_pagamento']}\n"
-    if c:
-        output += f"Cliente: {c['nome']} (P.IVA: {c.get('partita_iva','')})\n"
-    output += f"Totale Fattura: €{f.get('totale', 0.0):.2f}\n"
-    output += "----------------------------------------\n\n"
-    
-    cur.execute("SELECT * FROM righe_fattura WHERE fattura_id = %s ORDER BY id ASC", (fattura_id,))
-    righe = cur.fetchall()
-    for r in righe:
-        output += f" - {r['descrizione']}: {r['quantita']} x €{r['prezzo_unitario']:.2f}\n"
-            
     cur.close()
-    return Response(output, mimetype="text/plain", headers={"Content-Disposition": f"attachment;filename=backup_fattura_{fattura_id}.txt"})
+    
+    # Risposta che scarica il file TXT rinominato come backup dell'intero registro
+    return Response(
+        output, 
+        mimetype="text/plain", 
+        headers={"Content-Disposition": "attachment;filename=backup_registro_completo.txt"}
+    )
     
 # ==============================================================================
 # 13. AVVIO APPLICAZIONE
