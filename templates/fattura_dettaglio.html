@@ -344,10 +344,27 @@
 <!-- AZIONI -->
 <div class="flex gap-1 mt-2">
     {% if fattura.stato != "CHIUSA" %}
-        <a href="/chiudi_fattura/{{ fattura.id }}" class="btn btn-primary">✅ Chiudi fattura</a>
+        <button type="button" onclick="gestisciChiudiFattura({{ fattura.id }})" class="btn btn-primary">✅ Chiudi fattura</button>
         <a href="/delete_fattura/{{ fattura.id }}" onclick="return confirm('Eliminare fattura {{ fattura.numero }}?')" class="btn btn-danger">🗑 Elimina fattura</a>
     {% endif %}
 </div>
+
+<script>
+function gestisciChiudiFattura(fatturaId) {
+    // Prima avviamo il download del backup
+    const link = document.createElement('a');
+    link.href = '/export_fattura_backup/' + fatturaId;
+    link.download = 'backup_fattura_' + fatturaId + '.txt';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    // Aspettiamo mezzo secondo per essere sicuri che il browser avvii il download, poi procediamo alla rotta di chiusura
+    setTimeout(function() {
+        window.location.href = "/chiudi_fattura/" + fatturaId;
+    }, 500);
+}
+</script>
 
 <script>
 const carrelloDDT = {};

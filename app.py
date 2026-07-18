@@ -1498,7 +1498,9 @@ def export_prodotti_backup():
     return Response(output, mimetype="text/plain", headers={"Content-Disposition": "attachment;filename=backup_prodotti.txt"})
 
 @app.route("/export_fattura_backup/<int:fattura_id>")
+# Se usi Flask-Login aggiungi qui sotto: @login_required
 def export_fattura_backup(fattura_id):
+    # La rotta deve semplicemente generare il file usando la stessa sessione
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
@@ -1513,32 +1515,20 @@ def export_fattura_backup(fattura_id):
     c = cur.fetchone()
     
     output = f"=== DETTAGLIO FATTURA N. {f.get('numero','-')} DEL {f.get('data','-')} ===\n"
-    output += f"Stato: {f['stato_pagamento']}\n"
-    output += f"Tipo: {f['tipo']}\n"
+    output += f"Stato Pagamento: {f['stato_pagamento']}\n"
     if c:
         output += f"Cliente: {c['nome']} (P.IVA: {c.get('partita_iva','')})\n"
     output += f"Totale Fattura: €{f.get('totale', 0.0):.2f}\n"
     output += "----------------------------------------\n\n"
     
-    if f["tipo"] == "FORNITURA":
-        cur.execute("SELECT * FROM ddt WHERE fattura_id = %s ORDER BY id ASC", (fattura_id,))
-        ddts = cur.fetchall()
-        for d in ddts:
-            output += f">> DDT N. {d['numero']} del {d['data']}\n"
-            cur.execute("SELECT * FROM righe_ddt WHERE ddt_id = %s ORDER BY id ASC", (d['id'],))
-            righe = cur.fetchall()
-            for r in righe:
-                output += f"   - {r['descrizione']}: {r['quantita']} {r['unita_misura']} x €{r['prezzo']:.2f} = €{r['quantita']*r['prezzo']:.2f}\n"
-            output += "\n"
-    else:
-        cur.execute("SELECT * FROM righe_fattura WHERE fattura_id = %s ORDER BY id ASC", (fattura_id,))
-        righe = cur.fetchall()
-        for r in righe:
-            output += f" - {r['descrizione']}: {r['quantita']} x €{r['prezzo_unitario']:.2f}\n"
+    cur.execute("SELECT * FROM righe_fattura WHERE fattura_id = %s ORDER BY id ASC", (fattura_id,))
+    righe = cur.fetchall()
+    for r in righe:
+        output += f" - {r['descrizione']}: {r['quantita']} x €{r['prezzo_unitario']:.2f}\n"
             
     cur.close()
     return Response(output, mimetype="text/plain", headers={"Content-Disposition": f"attachment;filename=backup_fattura_{fattura_id}.txt"})
-
+    
 # ==============================================================================
 # 13. AVVIO APPLICAZIONE
 # ==============================================================================
