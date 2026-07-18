@@ -214,11 +214,13 @@ body {
     background: #ffffff;
     border-radius: 12px;
     border: 1px solid #e8ecf0;
-    overflow: hidden;
+    overflow-x: auto; /* Attiva lo scorrimento orizzontale se la tabella supera lo schermo */
+    -webkit-overflow-scrolling: touch; /* Rende lo scorrimento fluido sui dispositivi touch */
 }
 
 table {
     width: 100%;
+    min-width: 900px; /* Forza una larghezza minima vitale per non schiacciare i dati */
     border-collapse: collapse;
     font-size: 13.5px;
 }
@@ -307,11 +309,12 @@ tbody tr:hover td {
 
 .form-row {
     display: flex;
+    flex-wrap: wrap; /* Consente ai campi di scendere sotto se lo spazio finisce */
     gap: 1rem;
 }
 
 .form-row .form-group {
-    flex: 1;
+    flex: 1 1 200px; /* Permette al campo di ridimensionarsi, impostando una larghezza minima di 200px */
 }
 
 /* ========================= */
@@ -491,3 +494,28 @@ tbody tr:hover td {
 .gap-2 { gap: 1rem; }
 .items-center { align-items: center; }
 .justify-between { justify-content: space-between; }
+
+/* ========================= */
+/* RIDUZIONE FINESTRE  */
+/* ========================= */
+
+@media (max-width: 768px) {
+    body {
+        flex-direction: column; /* Sposta il layout in verticale se lo schermo è molto stretto */
+    }
+    
+    .sidebar {
+        position: relative;
+        width: 100%;
+        min-height: auto;
+    }
+    
+    .main {
+        margin-left: 0; /* Rimuove lo spazio della sidebar fissa */
+        padding: 1rem;
+    }
+
+    .stats {
+        grid-template-columns: 1fr; /* Le card della dashboard si dispongono su una sola colonna */
+    }
+}
