@@ -343,7 +343,7 @@ def vedi_fattura(fattura_id):
         cur.execute("SELECT * FROM clienti WHERE id = %s", (f["cliente_id"],))
         cliente = cur.fetchone()
     
-    cur.execute("SELECT * FROM prodotti ORDER BY nome ASC")
+    cur.execute("SELECT * FROM prodotti ORDER BY id ASC")
     prodotti = cur.fetchall()
     
     ddt_list = []

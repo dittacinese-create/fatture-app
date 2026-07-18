@@ -698,10 +698,15 @@ async function inviaProdottiMultipli(ddt_id, fattura_id) {
 
     righe.forEach(r => {
         const prod_id = r.getAttribute("data-prod-id");
-        const qty = r.querySelector(".qty-carrello").value;
+        let qty = r.querySelector(".qty-carrello").value.trim();
         const prezzo = r.querySelector(".prezzo-carrello").value;
 
-        if (!qty || parseFloat(qty) <= 0) {
+        // Se l'utente non scrive la quantità, inserisce 1 in automatico
+        if (qty === "") {
+            qty = "1";
+        }
+
+        if (parseFloat(qty) <= 0) {
             erroreValutazione = true;
             r.querySelector(".qty-carrello").style.borderColor = "#ef4444";
         } else {
@@ -711,7 +716,7 @@ async function inviaProdottiMultipli(ddt_id, fattura_id) {
     });
 
     if (erroreValutazione) {
-        alert("Inserisci la quantità per tutti i prodotti selezionati.");
+        alert("Inserisci una quantità maggiore di 0 per i prodotti selezionati.");
         return;
     }
 
