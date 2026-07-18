@@ -1477,12 +1477,24 @@ def export_clienti_backup():
     cur.close()
     
     # Crea un file di testo formattato in modo leggibile
+   # Crea un file di testo formattato in modo leggibile
     output = "=== LISTA CLIENTI ===\n\n"
     for c in clienti:
-        output += f"ID: {c['id']}\nNome: {c['nome']}\nPartita IVA: {c.get('partita_iva','')}\nCodice Fiscale: {c.get('codice_fiscale','')}\nEmail: {c.get('email','')}\nTelefono: {c.get('telefono','')}\nIndirizzo: {c.get('indirizzo','')}\n----------------------------------------\n"
+        output += (
+            f"ID: {c['id']}\n"
+            f"Nome: {c['nome']}\n"
+            f"Partita IVA: {c.get('partita_iva','')}\n"
+            f"Codice Fiscale: {c.get('codice_fiscale','')}\n"
+            f"Codice SDI: {c.get('codice_sdi','')}\n"
+            f"PEC: {c.get('pec','')}\n"
+            f"Email: {c.get('email','')}\n"
+            f"Telefono: {c.get('telefono','')}\n"
+            f"Indirizzo: {c.get('indirizzo','')}\n"
+            f"----------------------------------------\n"
+        )
     
     return Response(output, mimetype="text/plain", headers={"Content-Disposition": "attachment;filename=backup_clienti.txt"})
-
+    
 @app.route("/export_prodotti_backup")
 def export_prodotti_backup():
     db = get_db()
@@ -1539,7 +1551,7 @@ def export_fattura_backup(fattura_id):
         mimetype="text/plain", 
         headers={"Content-Disposition": "attachment;filename=backup_registro_completo.txt"}
     )
-    
+
 # ==============================================================================
 # 13. AVVIO APPLICAZIONE
 # ==============================================================================
