@@ -546,12 +546,15 @@ function toggleVistaProdotti(ddt_id) {
     document.getElementById("prod_id_" + ddt_id).value = "";
 }
 
-function aggiungiAzioneRicercaAlCarrello(ddt_id) {
+async function aggiungiAzioneRicercaAlCarrello(ddt_id) {
     const prod_id = document.getElementById("prod_id_" + ddt_id).value;
     const qty = document.getElementById("qty_ricerca_" + ddt_id).value;
     const prezzo = document.getElementById("prezzo_ricerca_" + ddt_id).value;
 
-    if (!prod_id) { alert("Seleziona un prodotto."); return; }
+    if (!prod_id) { alert("Seleziona un prodotto dall'elenco."); return; }
+    
+    const quantitaFinale = qty ? parseFloat(qty) : 1;
+    if (quantitaFinale <= 0) { alert("Inserisci una quantità maggiore di 0."); return; }
 
     let prodottiTutti = [];
     try {
@@ -562,65 +565,51 @@ function aggiungiAzioneRicercaAlCarrello(ddt_id) {
     const prodottoTrovato = prodottiTutti.find(p => p.id === prodIdNum);
     if (!prodottoTrovato) return;
 
-    if (!carrelloDDT[ddt_id]) carrelloDDT[ddt_id] = {};
+    const prezzoFinale = prezzo ? parseFloat(prezzo) : prodottoTrovato.prezzo_base;
 
-    carrelloDDT[ddt_id][prodIdNum] = {
-        nome: productoTrovato.nome,
-        prezzo: prezzo ? parseFloat(prezzo) : productoTrovato.prezzo_base,
-        um: productoTrovato.unita_misura,
-        qtyDefault: qty ? parseFloat(qty) : ""
-    };
+    const urlParams = window.location.pathname.split('/');
+    const fattura_id = urlParams[urlParams.length - 1];
 
-    document.getElementById("prod_search_" + ddt_id).value = "";
-    document.getElementById("prod_id_" + ddt_id).value = "";
-    document.getElementById("qty_ricerca_" + ddt_id).value = "";
-    document.getElementById("prezzo_ricerca_" + ddt_id).value = "";
-    document.getElementById("um_ricerca_" + ddt_id).textContent = "";
+    const formData = new FormData();
+    formData.append("fattura_id", fattura_id);
+    formData.append("ddt_id", ddt_id);
+    formData.append("prodotto_id", prodIdNum);
+    formData.append("quantita", quantitaFinale);
+    formData.append("prezzo_override", prezzoFinale);
 
-    const btn = document.getElementById("btn_p_" + ddt_id + "_" + prodIdNum);
-    if (btn) {
-        btn.style.background = "#1a1a2e";
-        btn.style.borderColor = "#1a1a2e";
-        btn.style.color = "white";
+    try {
+        const response = await fetch("/add_riga_prodotto", {
+            method: "POST",
+            body: formData
+        });
+        if (response.ok) {
+            window.location.reload();
+        } else {
+            alert("Errore durante l'inserimento del prodotto.");
+        }
+    } catch (e) {
+        alert("Errore di rete o server.");
     }
-
-    renderizzaCarrello(ddt_id);
 }
 
-function toggleSelezioneProdotto(ddt_id, prod_id) {
-    if (!carrelloDDT[ddt_id]) carrelloDDT[ddt_id] = {};
-    const btn = document.getElementById("btn_p_" + ddt_id + "_" + prod_id);
+if (typeof window.ordineClickDDT === 'undefined') {
+    window.ordineClickDDT = {};
+}
 
-    if (carrelloDDT[ddt_id][prod_id]) {
+function rimuoviDalCarrelloSpecifico(ddt_id, prod_id) {
+    if (carrelloDDT[ddt_id] && carrelloDDT[ddt_id][prod_id]) {
         delete carrelloDDT[ddt_id][prod_id];
+        if (window.ordineClickDDT[ddt_id]) {
+            window.ordineClickDDT[ddt_id] = window.ordineClickDDT[ddt_id].filter(id => id !== String(prod_id));
+        }
+        const btn = document.getElementById("btn_p_" + ddt_id + "_" + prod_id);
         if (btn) {
             btn.style.background = "white";
             btn.style.borderColor = "#d0d5dd";
             btn.style.color = "initial";
         }
-    } else {
-        let prodottiTutti = [];
-        try {
-            prodottiTutti = JSON.parse(document.getElementById("prodotti_json").textContent);
-        } catch (e) { return; }
-        
-        const prodottoTrovato = prodottiTutti.find(p => p.id === prod_id);
-        if (!prodottoTrovato) return;
-
-        carrelloDDT[ddt_id][prod_id] = { 
-            nome: prodottoTrovato.nome, 
-            prezzo: prodottoTrovato.prezzo_base, 
-            um: prodottoTrovato.unita_misura,
-            qtyDefault: ""
-        };
-        
-        if (btn) {
-            btn.style.background = "#1a1a2e";
-            btn.style.borderColor = "#1a1a2e";
-            btn.style.color = "white";
-        }
+        renderizzaCarrello(ddt_id);
     }
-    renderizzaCarrello(ddt_id);
 }
 
 function renderizzaCarrello(ddt_id) {
@@ -649,7 +638,11 @@ function renderizzaCarrello(ddt_id) {
 
     wrapperRighe.innerHTML = "";
 
-    prodottiSelezionati.forEach(pId => {
+    const elencoOrdinato = window.ordineClickDDT[ddt_id] || [];
+
+    elencoOrdinato.forEach(pId => {
+        if (!carrelloDDT[ddt_id][pId]) return;
+        
         const p = carrelloDDT[ddt_id][pId];
         const vQty = vecchiValori[pId] ? vecchiValori[pId].qty : (p.qtyDefault || "");
         const vPrezzo = vecchiValori[pId] ? vecchiValori[pId].prezzo : p.prezzo;
@@ -674,19 +667,6 @@ function renderizzaCarrello(ddt_id) {
     });
 }
 
-function rimuoviDalCarrelloSpecifico(ddt_id, prod_id) {
-    if (carrelloDDT[ddt_id] && carrelloDDT[ddt_id][prod_id]) {
-        delete carrelloDDT[ddt_id][prod_id];
-        const btn = document.getElementById("btn_p_" + ddt_id + "_" + prod_id);
-        if (btn) {
-            btn.style.background = "white";
-            btn.style.borderColor = "#d0d5dd";
-            btn.style.color = "initial";
-        }
-        renderizzaCarrello(ddt_id);
-    }
-}
-
 async function inviaProdottiMultipli(ddt_id, fattura_id) {
     const container = document.getElementById("carrello_righe_" + ddt_id);
     if(!container) return;
@@ -701,7 +681,6 @@ async function inviaProdottiMultipli(ddt_id, fattura_id) {
         let qty = r.querySelector(".qty-carrello").value.trim();
         const prezzo = r.querySelector(".prezzo-carrello").value;
 
-        // Se l'utente non scrive la quantità, inserisce 1 in automatico
         if (qty === "") {
             qty = "1";
         }
@@ -737,6 +716,7 @@ async function inviaProdottiMultipli(ddt_id, fattura_id) {
         });
     }
 
+    window.ordineClickDDT[ddt_id] = [];
     carrelloDDT[ddt_id] = {};
     window.location.reload();
 }
