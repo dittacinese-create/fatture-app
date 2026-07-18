@@ -596,6 +596,49 @@ if (typeof window.ordineClickDDT === 'undefined') {
     window.ordineClickDDT = {};
 }
 
+function toggleSelezioneProdotto(ddt_id, prod_id) {
+    if (!carrelloDDT[ddt_id]) carrelloDDT[ddt_id] = {};
+    if (!window.ordineClickDDT[ddt_id]) window.ordineClickDDT[ddt_id] = [];
+    
+    const btn = document.getElementById("btn_p_" + ddt_id + "_" + prod_id);
+
+    if (carrelloDDT[ddt_id][prod_id]) {
+        delete carrelloDDT[ddt_id][prod_id];
+        window.ordineClickDDT[ddt_id] = window.ordineClickDDT[ddt_id].filter(id => id !== String(prod_id));
+        if (btn) {
+            btn.style.background = "white";
+            btn.style.borderColor = "#d0d5dd";
+            btn.style.color = "initial";
+        }
+    } else {
+        let prodottiTutti = [];
+        try {
+            prodottiTutti = JSON.parse(document.getElementById("prodotti_json").textContent);
+        } catch (e) { return; }
+        
+        const prodottoTrovato = prodottiTutti.find(p => p.id === prod_id);
+        if (!prodottoTrovato) return;
+
+        carrelloDDT[ddt_id][prod_id] = { 
+            nome: prodottoTrovato.nome, 
+            prezzo: prodottoTrovato.prezzo_base, 
+            um: prodottoTrovato.unita_misura,
+            qtyDefault: ""
+        };
+        
+        if (!window.ordineClickDDT[ddt_id].includes(String(prod_id))) {
+            window.ordineClickDDT[ddt_id].push(String(prod_id));
+        }
+        
+        if (btn) {
+            btn.style.background = "#1a1a2e";
+            btn.style.borderColor = "#1a1a2e";
+            btn.style.color = "white";
+        }
+    }
+    renderizzaCarrello(ddt_id);
+}
+
 function rimuoviDalCarrelloSpecifico(ddt_id, prod_id) {
     if (carrelloDDT[ddt_id] && carrelloDDT[ddt_id][prod_id]) {
         delete carrelloDDT[ddt_id][prod_id];
