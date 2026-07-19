@@ -1487,14 +1487,12 @@ def export_clienti_backup():
             f"Codice Fiscale: {c.get('codice_fiscale','')}\n"
             f"Codice SDI: {c.get('codice_sdi','')}\n"
             f"PEC: {c.get('pec','')}\n"
-            f"Email: {c.get('email','')}\n"
-            f"Telefono: {c.get('telefono','')}\n"
             f"Indirizzo: {c.get('indirizzo','')}\n"
             f"----------------------------------------\n"
         )
     
     return Response(output, mimetype="text/plain", headers={"Content-Disposition": "attachment;filename=backup_clienti.txt"})
-    
+
 @app.route("/export_prodotti_backup")
 def export_prodotti_backup():
     db = get_db()

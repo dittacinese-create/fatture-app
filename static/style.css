@@ -502,48 +502,35 @@ tbody tr:hover td {
 
 @media (max-width: 768px) {
     body {
-        flex-direction: column;
+        flex-direction: column !important;
     }
     
-    /* Corregge la sidebar su mobile eliminando lo spazio vuoto */
     .sidebar {
-        position: relative;
-        width: 100%;
-        min-height: auto;
-        top: 0;
-        left: 0;
+        position: relative !important;
+        width: 100% !important;
+        min-height: auto !important;
+        top: 0 !important;
+        left: 0 !important;
+        display: block !important;
     }
     
-    /* Riduce lo spazio interno del contenuto principale su mobile */
     .main {
-        margin-left: 0;
-        padding: 1rem;
-        min-height: auto;
+        margin-left: 0 !important;
+        padding: 1rem !important;
+        min-height: auto !important;
     }
 
-    /* Rende fluidi e ben distanziati la barra di ricerca e i filtri a selezione */
-    .topbar, .search-bar, .flex {
-        flex-wrap: wrap;
-        gap: 0.75rem;
+    .topbar {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 1rem !important;
     }
 
     .search-bar input {
-        width: 100%; /* La barra di ricerca si allarga per occupare tutto lo schermo del telefono */
-    }
-
-    /* Distribuisce i bottoni dei filtri (Stati, Tipi, Reset) in modo ordinato */
-    .flex.gap-2 {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        width: 100%;
-    }
-    
-    .flex.gap-2 .btn {
-        width: 100%;
-        justify-content: center;
+        width: 100% !important;
     }
 
     .stats {
-        grid-template-columns: 1fr;
+        grid-template-columns: 1fr !important;
     }
 }
