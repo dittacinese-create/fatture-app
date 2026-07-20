@@ -1525,11 +1525,24 @@ def elimina_nota_api(id):
 def export_clienti_backup():
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    
+    # Prendiamo tutti i clienti in ordine alfabetico per il report
     cur.execute("SELECT * FROM clienti ORDER BY nome ASC")
     clienti = cur.fetchall()
+    
+    # Identifichiamo l'ultimo cliente inserito in assoluto tramite ID più alto
+    cur.execute("SELECT nome FROM clienti ORDER BY id DESC LIMIT 1")
+    ultimo_inserito = cur.fetchone()
     cur.close()
     
-    output = "=== LISTA CLIENTI ===\n\n"
+    nome_ultimo = ultimo_inserito['nome'] if ultimo_inserito else '-'
+    
+    # Costruzione dell'output con la riga dell'azione in cima
+    output = f"Aggiunto Cliente {nome_ultimo}\n"
+    output += "========================================\n"
+    output += "=== LISTA CLIENTI ===\n"
+    output += "========================================\n\n"
+    
     for c in clienti:
         output += (
             f"ID: {c['id']}\n"
@@ -1546,58 +1559,36 @@ def export_clienti_backup():
     filename = f"clienti_{timestamp}.txt"
     return Response(output, mimetype="text/plain", headers={"Content-Disposition": f"attachment;filename={filename}"})
 
+
 @app.route("/export_prodotti_backup")
 def export_prodotti_backup():
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    
+    # Prendiamo tutti i prodotti in ordine alfabetico per il report
     cur.execute("SELECT * FROM prodotti ORDER BY nome ASC")
     prodotti = cur.fetchall()
+    
+    # Identifichiamo l'ultimo prodotto inserito in assoluto tramite ID più alto
+    cur.execute("SELECT nome FROM prodotti ORDER BY id DESC LIMIT 1")
+    ultimo_inserito = cur.fetchone()
     cur.close()
     
-    output = "=== LISTA PRODOTTI ===\n\n"
+    nome_ultimo = ultimo_inserito['nome'] if ultimo_inserito else '-'
+    
+    # Costruzione dell'output con la riga dell'azione in cima
+    output = f"Aggiunto Prodotto {nome_ultimo}\n"
+    output += "========================================\n"
+    output += "=== LISTA PRODOTTI ===\n"
+    output += "========================================\n\n"
+    
     for p in prodotti:
         output += f"ID: {p['id']}\nNome: {p['nome']}\nUnità di Misura: {p['unita_misura']}\nPrezzo Base: €{p['prezzo_base']:.2f}\n----------------------------------------\n"
     
     timestamp = datetime.now().strftime("%d.%m.%y_%H.%M")
     filename = f"prodotti_{timestamp}.txt"
     return Response(output, mimetype="text/plain", headers={"Content-Disposition": f"attachment;filename={filename}"})
-
-@app.route("/export_fattura_backup/<int:fattura_id>")
-def export_fattura_backup(fattura_id):
-    db = get_db()
-    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
-    query = """
-        SELECT f.*, c.nome AS cliente_nome 
-        FROM fatture f
-        LEFT JOIN clienti c ON f.cliente_id = c.id
-        ORDER BY f.data DESC, f.id DESC
-    """
-    cur.execute(query)
-    tutte_fatture = cur.fetchall()
-    
-    if not tutte_fatture:
-        cur.close()
-        return "Nessuna fattura trouvata", 404
-
-    output = "=========================================================================================\n"
-    output += "                           REPORT GENERALE BACKUP FATTURE                                \n"
-    output += "=========================================================================================\n\n"
-    
-    for f in tutte_fatture:
-        output += f"N. FATTURA: {f.get('numero', '-')} | DATA: {f.get('data', '-')}\n"
-        output += f"CLIENTE:    {f.get('cliente_nome', 'Sconosciuto')}\n"
-        output += f"IMPORTO:    € {f.get('totale', 0.0):.2f}\n"
-        output += f"STATO PAG.: {f.get('stato_pagamento', '-')}\n"
-        output += f"NOTE/CANT.: {f.get('note', '') or '-'}\n"
-        output += "-----------------------------------------------------------------------------------------\n"
-        
-    cur.close()
-    
-    timestamp = datetime.now().strftime("%d.%m.%y_%H.%M")
-    filename = f"fatture_{timestamp}.txt"
-    return Response(output, mimetype="text/plain", headers={"Content-Disposition": f"attachment;filename={filename}"})
-
 # ==============================================================================
 # 13. AVVIO APPLICAZIONE
 # ==============================================================================
