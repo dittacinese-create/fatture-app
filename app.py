@@ -1053,7 +1053,7 @@ def genera_pdf(fattura_id):
             f["data_formattata"] = f["data"]
     else:
         f["data_formattata"] = ""
-        
+
     # 7. Renderizza l'HTML del template
     html = render_template(
         "pdf_fattura.html", 
