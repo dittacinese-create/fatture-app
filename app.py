@@ -1029,8 +1029,12 @@ def genera_pdf(fattura_id):
     if pisa_status.err:
         return "Errore durante la generazione del PDF", 500
         
-    # 9. Prepara la risposta con il nome file personalizzato
-    nome_cliente_pulito = (cliente["nome"] if cliente else "generico").replace(" ", "").strip()
+    # 9. Prepara la risposta con il nome file personalizzato (Fix anti-crash per clienti nulli)
+    if cliente and "nome" in cliente:
+        nome_cliente_pulito = str(cliente["nome"]).replace(" ", "").strip()
+    else:
+        nome_cliente_pulito = "generico"
+        
     numero_fattura_pulito = str(f["numero"]).replace("/", "-").strip() if f["numero"] else str(fattura_id)
     filename = f"Fattura_{numero_fattura_pulito}_{nome_cliente_pulito}.pdf"
     
@@ -1154,13 +1158,16 @@ def delete_prodotto(prodotto_id):
     cur.close()
     return redirect(url_for("prodotti"))
 
-
 # ==============================================================================
 # 9. DASHBOARD & STATISTICHE
 # =============================================================================
 
 @app.route("/dashboard")
 def dashboard():
+    # Spostiamo l'importazione di psycopg2.extras per sicurezza, 
+    # ma assumendo che sia già disponibile, lo manteniamo sicuro e accessibile
+    import psycopg2.extras
+
     # 1. Recupera i parametri dei filtri dalla richiesta GET
     filtro_inizio = request.args.get("inizio", "").strip() or None
     filtro_fine = request.args.get("fine", "").strip() or None
@@ -1173,8 +1180,7 @@ def dashboard():
 
     db = get_db()
     
-    # CORREZIONE CRUCIALE: Usiamo DictCursor per poter usare f['chiave'] ed f.get('chiave')
-    import psycopg2.extras
+    # CORREZIONE CRUCIALE: Inizializziamo il cursore solo dopo esserci assicurati dell'importazione
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
 
     # 2. Query allineata con i nomi reali delle colonne (numero, data, totale, note)
@@ -1262,7 +1268,6 @@ def dashboard():
         clienti_lista=clienti_lista,
         password_sblocco=password_sblocco
     )
-
 
 # ==============================================================================
 # 10. API DI AGGIORNAMENTO STATO IN TEMPO REALE (DASHBOARD)
