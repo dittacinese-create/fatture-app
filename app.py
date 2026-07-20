@@ -1521,6 +1521,49 @@ def elimina_nota_api(id):
 # 12. DOWNLOAD DATI CLIENTI, PRODOTTI, FATTURE
 # ==============================================================================
 
+@app.route("/export_fattura_backup")
+def export_fattura_backup():
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    
+    query = """
+        SELECT f.*, c.nome AS cliente_nome 
+        FROM fatture f
+        LEFT JOIN clienti c ON f.cliente_id = c.id
+        ORDER BY f.data DESC, f.id DESC
+    """
+    cur.execute(query)
+    tutte_fatture = cur.fetchall()
+    
+    if not tutte_fatture:
+        cur.close()
+        return "Nessuna fattura trovata", 404
+
+    # Recupera i dettagli della fattura più recente per la riga descrittiva dell'azione
+    ultima_fattura = tutte_fatture[0]
+    num_ultima = ultima_fattura.get('numero', '-')
+    cliente_ultimo = ultima_fattura.get('cliente_nome', 'Sconosciuto')
+
+    # Costruzione del file di testo
+    output = f"Aggiunta Fattura n. {num_ultima} e nome cliente {cliente_ultimo}\n"
+    output += "=========================================================================================\n"
+    output += "                           REPORT GENERALE BACKUP FATTURE                                \n"
+    output += "=========================================================================================\n\n"
+    
+    for f in tutte_fatture:
+        output += f"N. FATTURA: {f.get('numero', '-')} | DATA: {f.get('data', '-')}\n"
+        output += f"CLIENTE:    {f.get('cliente_nome', 'Sconosciuto')}\n"
+        output += f"IMPORTO:    € {f.get('totale', 0.0):.2f}\n"
+        output += f"STATO PAG.: {f.get('stato_pagamento', '-')}\n"
+        output += f"NOTE/CANT.: {f.get('note', '') or '-'}\n"
+        output += "-----------------------------------------------------------------------------------------\n"
+        
+    cur.close()
+    
+    timestamp = datetime.now().strftime("%d.%m.%y_%H.%M")
+    filename = f"fatture_{timestamp}.txt"
+    return Response(output, mimetype="text/plain", headers={"Content-Disposition": f"attachment;filename={filename}"})
+    
 @app.route("/export_clienti_backup")
 def export_clienti_backup():
     db = get_db()
@@ -1588,7 +1631,7 @@ def export_prodotti_backup():
     timestamp = datetime.now().strftime("%d.%m.%y_%H.%M")
     filename = f"prodotti_{timestamp}.txt"
     return Response(output, mimetype="text/plain", headers={"Content-Disposition": f"attachment;filename={filename}"})
-    
+
 # ==============================================================================
 # 13. AVVIO APPLICAZIONE
 # ==============================================================================
