@@ -122,8 +122,8 @@
                 <td>{{ r.descrizione }}</td>
                 <td>{{ r.unita_misura }}</td>
                 <td class="right">{{ r.quantita }}</td>
-                <td class="right">{{ "%.2f"|format(r.prezzo) }}&euro;</td>
-                <td class="right">{{ "%.2f"|format(r.totale) }}&euro;</td>
+                <td class="right">{{ r.prezzo }}&euro;</td>
+                <td class="right">{{ r.totale }}&euro;</td>
             </tr>
             {% endif %}{% endfor %}
         </tbody>
@@ -148,8 +148,8 @@
                 <td>{{ r.descrizione }}</td>
                 <td>{{ r.unita_misura }}</td>
                 <td class="right">{{ r.quantita }}</td>
-                <td class="right">{{ "%.2f"|format(r.prezzo) }}&euro;</td>
-                <td class="right">{{ "%.2f"|format(r.totale) }}&euro;</td>
+                <td class="right">{{ r.prezzo }}&euro;</td>
+                <td class="right">{{ r.totale }}&euro;</td>
             </tr>
             {% endfor %}
         </tbody>
@@ -161,18 +161,18 @@
     <tr>
         <td class="spazio"></td>
         <td class="box">
-            <div class="riga-totale">Imponibile: {{ "%.2f"|format(imponibile) }}&euro;</div>
-            {% if fattura.regime_iva == "22" %}
-            <div class="riga-totale">IVA 22%: {{ "%.2f"|format(iva) }}&euro;</div>
+            <div class="riga-totale">Imponibile: {{ imponibile }}&euro;</div>
+            {% if fattura.regime_iva|string == "22" or fattura.regime_iva|string == "22.0" %}
+            <div class="riga-totale">IVA 22%: {{ iva }}&euro;</div>
             {% endif %}
-            <div class="totale-finale">TOTALE {{ "%.2f"|format(totale) }}&euro;</div>
+            <div class="totale-finale">TOTALE {{ totale }}&euro;</div>
         </td>
     </tr>
 </table>
 
 <!-- INFORMAZIONI DI CHIUSURA (REVERSE CHARGE & PAGAMENTO) -->
 <table class="bottom-info">
-    {% if fattura.regime_iva != "22" %}
+    {% if fattura.regime_iva|string != "22" and fattura.regime_iva|string != "22.0" %}
     <tr>
         <td style="padding-bottom: 10px;">
             Operazione soggetta a Reverse Charge – IVA assolta dal committente (art. 17 c. 6/A DPR 633/72)
