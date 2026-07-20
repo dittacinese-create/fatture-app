@@ -1545,7 +1545,7 @@ def export_fattura_backup():
     cliente_ultimo = ultima_fattura.get('cliente_nome', 'Sconosciuto')
 
     # Costruzione del file di testo
-    output = f"Aggiunta Fattura n. {num_ultima} e nome cliente {cliente_ultimo}\n"
+    output = f"Aggiunta Fattura n. {num_ultima}  {cliente_ultimo}\n"
     output += "=========================================================================================\n"
     output += "                           REPORT GENERALE BACKUP FATTURE                                \n"
     output += "=========================================================================================\n\n"
@@ -1563,7 +1563,7 @@ def export_fattura_backup():
     timestamp = datetime.now().strftime("%d.%m.%y_%H.%M")
     filename = f"fatture_{timestamp}.txt"
     return Response(output, mimetype="text/plain", headers={"Content-Disposition": f"attachment;filename={filename}"})
-    
+
 @app.route("/export_clienti_backup")
 def export_clienti_backup():
     db = get_db()
