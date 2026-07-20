@@ -1039,6 +1039,21 @@ def genera_pdf(fattura_id):
     f["imponibile_str"] = f"{valore_imponibile:.2f}"
     f["iva_str"] = f"{valore_iva:.2f}"
 
+    # FIX DATA: Converte la data da AAAA-MM-GG a GG/MM/AAAA se presente
+    if f.get("data"):
+        try:
+            # Se è già un oggetto datetime/date
+            if hasattr(f["data"], "strftime"):
+                f["data_formattata"] = f["data"].strftime("%d/%m/%Y")
+            else:
+                # Se è una stringa (es. "2026-07-13")
+                dt = datetime.strptime(str(f["data"]), "%Y-%m-%d")
+                f["data_formattata"] = dt.strftime("%d/%m/%Y")
+        except:
+            f["data_formattata"] = f["data"]
+    else:
+        f["data_formattata"] = ""
+        
     # 7. Renderizza l'HTML del template
     html = render_template(
         "pdf_fattura.html", 

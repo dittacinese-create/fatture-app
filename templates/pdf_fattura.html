@@ -48,7 +48,7 @@
 <table class="titolo">
     <tr>
         <td class="tit">FATTURA</td>
-        <td class="num">n. {{ fattura.numero }} del {{ fattura.data }}</td>
+        <td class="num">n. {{ fattura.numero }} del {{ fattura.data_formattata }}</td>
     </tr>
 </table>
 
@@ -173,12 +173,18 @@
     {% endif %}
     <tr>
         <td>
+            <td>
             <strong>Dati di pagamento:</strong><br>
             {% if banca_selezionata %}
-                {{ banca_selezionata }}
+                {% if banca_selezionata is mapping %}
+                    {{ banca_selezionata.label_pdf if banca_selezionata.label_pdf else banca_selezionata.nome }}
+                {% else %}
+                    {{ banca_selezionata }}
+                {% endif %}
             {% else %}
                 <em>Nessun dettaglio bancario inserito o richiesto.</em>
             {% endif %}
+        </td>
         </td>
     </tr>
 </table>
