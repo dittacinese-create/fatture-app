@@ -1529,8 +1529,6 @@ def export_clienti_backup():
     clienti = cur.fetchall()
     cur.close()
     
-    # Crea un file di testo formattato in modo leggibile
-   # Crea un file di testo formattato in modo leggibile
     output = "=== LISTA CLIENTI ===\n\n"
     for c in clienti:
         output += (
@@ -1544,7 +1542,9 @@ def export_clienti_backup():
             f"----------------------------------------\n"
         )
     
-    return Response(output, mimetype="text/plain", headers={"Content-Disposition": "attachment;filename=backup_clienti.txt"})
+    timestamp = datetime.now().strftime("%d.%m.%y_%H.%M")
+    filename = f"clienti_{timestamp}.txt"
+    return Response(output, mimetype="text/plain", headers={"Content-Disposition": f"attachment;filename={filename}"})
 
 @app.route("/export_prodotti_backup")
 def export_prodotti_backup():
@@ -1558,16 +1558,15 @@ def export_prodotti_backup():
     for p in prodotti:
         output += f"ID: {p['id']}\nNome: {p['nome']}\nUnità di Misura: {p['unita_misura']}\nPrezzo Base: €{p['prezzo_base']:.2f}\n----------------------------------------\n"
     
-    return Response(output, mimetype="text/plain", headers={"Content-Disposition": "attachment;filename=backup_prodotti.txt"})
+    timestamp = datetime.now().strftime("%d.%m.%y_%H.%M")
+    filename = f"prodotti_{timestamp}.txt"
+    return Response(output, mimetype="text/plain", headers={"Content-Disposition": f"attachment;filename={filename}"})
 
 @app.route("/export_fattura_backup/<int:fattura_id>")
-# Se usi Flask-Login ricordati di decommentare: @login_required
 def export_fattura_backup(fattura_id):
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
-    # Estraiamo TUTTE le fatture ordinate in modo cronologico inverso (dalla più recente alla più vecchia)
-    # unendo i dati del cliente collegato
     query = """
         SELECT f.*, c.nome AS cliente_nome 
         FROM fatture f
@@ -1579,9 +1578,8 @@ def export_fattura_backup(fattura_id):
     
     if not tutte_fatture:
         cur.close()
-        return "Nessuna fattura trovata", 404
+        return "Nessuna fattura trouvata", 404
 
-    # Intestazione del file globale
     output = "=========================================================================================\n"
     output += "                           REPORT GENERALE BACKUP FATTURE                                \n"
     output += "=========================================================================================\n\n"
@@ -1596,12 +1594,9 @@ def export_fattura_backup(fattura_id):
         
     cur.close()
     
-    # Risposta che scarica il file TXT rinominato come backup dell'intero registro
-    return Response(
-        output, 
-        mimetype="text/plain", 
-        headers={"Content-Disposition": "attachment;filename=backup_registro_completo.txt"}
-    )
+    timestamp = datetime.now().strftime("%d.%m.%y_%H.%M")
+    filename = f"fatture_{timestamp}.txt"
+    return Response(output, mimetype="text/plain", headers={"Content-Disposition": f"attachment;filename={filename}"})
 
 # ==============================================================================
 # 13. AVVIO APPLICAZIONE
