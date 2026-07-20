@@ -1055,13 +1055,11 @@ def genera_pdf(fattura_id):
         autoprint=False
     )
 
-    # 8. Genera il PDF in memoria con encoding esplicito per prevenire eccezioni asincrone
+    # 8. Genera il PDF in memoria
     pdf_buffer = io.BytesIO()
     try:
-        # Usiamo l'approccio standard a oggetti per evitare eccezioni di contesto
-        pisa.pisaDocument(io.BytesIO(html.encode("utf-8")), pdf_buffer)
+        pisa.CreatePDF(io.BytesIO(html.encode("utf-8")), dest=pdf_buffer)
     except Exception as pdf_error:
-        print(f"Errore xhtml2pdf: {pdf_error}")
         return f"Errore interno del motore PDF: {pdf_error}", 500
         
     # 9. Prepara la risposta con il nome file personalizzato sicuro
