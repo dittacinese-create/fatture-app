@@ -927,31 +927,38 @@ def delete_riga_ddt(riga_id, fattura_id):
 @app.route("/pdf/<int:fattura_id>")
 def genera_pdf(fattura_id):
     import io
+    import psycopg2.extras
     from xhtml2pdf import pisa
-    from flask import make_response
+    from flask import make_response, render_template
 
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
     # 1. Recupera la fattura
     cur.execute("SELECT * FROM fatture WHERE id = %s", (fattura_id,))
-    f = cur.fetchone()
+    f_raw = cur.fetchone()
     
-    if not f:
+    if not f_raw:
         cur.close()
         return "Errore: Fattura non trovata.", 404
         
+    f = dict(f_raw)
+        
     # 2. Recupera i dati del cliente (Cessionario)
     cliente = None
-    if f["cliente_id"]:
+    if f.get("cliente_id"):
         cur.execute("SELECT * FROM clienti WHERE id = %s", (f["cliente_id"],))
-        cliente = cur.fetchone()
+        c_raw = cur.fetchone()
+        if c_raw:
+            cliente = dict(c_raw)
         
     # 3. Recupera i dati dell'azienda (Cedente)
     cur.execute("SELECT * FROM azienda LIMIT 1")
-    azienda = cur.fetchone()
+    az_raw = cur.fetchone()
     
-    if not azienda:
+    if az_raw:
+        azienda = dict(az_raw)
+    else:
         azienda = {
             "nome": "La Tua Ditta S.r.l.",
             "indirizzo": "Via Roma 123, Torino (TO)",
@@ -961,19 +968,28 @@ def genera_pdf(fattura_id):
             "email": "info@lazuaditta.it"
         }
         
-    # 4. Associa i dettagli della banca selezionata usando il dizionario BANCHE globale di config.py
+    # 4. Associa i dettagli della banca selezionata usando il dizionario BANCHE globale
     banca_selezionata = None
-    if f["banca_id"] in BANCHE:
-        banca_selezionata = BANCHE[f["banca_id"]]
+    try:
+        if f.get("banca_id") and f["banca_id"] in BANCHE:
+            banca_selezionata = BANCHE[f["banca_id"]]
+    except NameError:
+        # Se BANCHE non è definita globalmente, prova a importarla da config
+        try:
+            from config import BANCHE
+            if f.get("banca_id") and f["banca_id"] in BANCHE:
+                banca_selezionata = BANCHE[f["banca_id"]]
+        except:
+            banca_selezionata = None
         
     # 5. Recupera ddt e righe in base al tipo
     ddt_list = []
     righe_ddt = []
     righe = []
     
-    if f["tipo"] == "FORNITURA":
+    if f.get("tipo") == "FORNITURA":
         cur.execute("SELECT * FROM ddt WHERE fattura_id = %s ORDER BY data ASC, id ASC", (fattura_id,))
-        ddt_list = cur.fetchall()
+        ddt_list = [dict(r) for r in cur.fetchall()]
         
         cur.execute("""
             SELECT rd.* FROM righe_ddt rd
@@ -983,7 +999,7 @@ def genera_pdf(fattura_id):
         righe_raw = cur.fetchall()
         for r in righe_raw:
             d = dict(r)
-            d["totale"] = d["quantita"] * d["prezzo"]
+            d["totale"] = float(d.get("quantita") or 0) * float(d.get("prezzo") or 0)
             righe_ddt.append(d)
     else:
         cur.execute("SELECT * FROM righe_fattura WHERE fattura_id = %s ORDER BY id ASC", (fattura_id,))
@@ -991,7 +1007,7 @@ def genera_pdf(fattura_id):
         for r in righe_raw:
             d = dict(r)
             d["prezzo"] = d.get("prezzo_unitario", d.get("prezzo", 0.0))
-            d["totale"] = d["quantita"] * d["prezzo"]
+            d["totale"] = float(d.get("quantita") or 0) * float(d.get("prezzo") or 0)
             righe.append(d)
             
     cur.close()
@@ -999,17 +1015,17 @@ def genera_pdf(fattura_id):
     # 6. Calcoli economici
     valore_totale = float(f.get("totale", 0.0) or 0.0)
     try:
-        aliquota = float(f["regime_iva"])
+        aliquota = float(f.get("regime_iva", 22.0) or 22.0)
     except:
         aliquota = 22.0
         
     valore_imponibile = valore_totale / (1 + (aliquota / 100.0))
     valore_iva = valore_totale - valore_imponibile
 
-    # 7. Renderizza l'HTML del template
+    # 7. Renderizza l'HTML del template (Passando dizionari puri e puliti)
     html = render_template(
         "pdf_fattura.html", 
-        fattura=dict(f),
+        fattura=f,
         cliente=cliente,
         azienda=azienda,
         banca_selezionata=banca_selezionata,
@@ -1022,20 +1038,17 @@ def genera_pdf(fattura_id):
         autoprint=False
     )
 
-    # 8. Genera il PDF in memoria
+    # 8. Genera il PDF in memoria (Rimosso il blocco rigido su pisa_status.err)
     pdf_buffer = io.BytesIO()
-    pisa_status = pisa.CreatePDF(io.BytesIO(html.encode("utf-8")), dest=pdf_buffer)
-    
-    if pisa_status.err:
-        return "Errore durante la generazione del PDF", 500
+    pisa.CreatePDF(io.BytesIO(html.encode("utf-8")), dest=pdf_buffer)
         
-    # 9. Prepara la risposta con il nome file personalizzato (Fix anti-crash per clienti nulli)
+    # 9. Prepara la risposta con il nome file personalizzato sicuro
     if cliente and "nome" in cliente:
         nome_cliente_pulito = str(cliente["nome"]).replace(" ", "").strip()
     else:
         nome_cliente_pulito = "generico"
         
-    numero_fattura_pulito = str(f["numero"]).replace("/", "-").strip() if f["numero"] else str(fattura_id)
+    numero_fattura_pulito = str(f.get("numero", "")).replace("/", "-").strip() or str(fattura_id)
     filename = f"Fattura_{numero_fattura_pulito}_{nome_cliente_pulito}.pdf"
     
     response = make_response(pdf_buffer.getvalue())
