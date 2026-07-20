@@ -131,7 +131,7 @@
                     {{ f.numero_fattura or '' }}
                 </td>
                 <td style="border: 1px solid #cbd5e1; padding: 7px 10px;">
-                    {{ f.nome_visualizzato or '' }}
+                    {{ f.cliente_nome or '' }}
                 </td>
                 <td style="border: 1px solid #cbd5e1; padding: 7px 10px; text-align: center;">
                     {{ f.data_fattura or '' }}
@@ -202,6 +202,7 @@ function cambiaZoom(valore) {
     container.style.width = `${100 / zoomAttuale}%`;
 }
 
+// Reimposta zoom iniziale
 function reimpostaZoom() {
     zoomAttuale = 1.0;
     const container = document.getElementById('contenitoreTabella');
@@ -283,7 +284,7 @@ function gestisciCambioStato(selettore) {
         riga.style.fontWeight = 'normal';
         riga.style.backgroundColor = '';
     } else if (nuovoStato === "Parziale") {
-        // Se parziale e non c'è valore, suggerisce 0
+        // Se parziale e non c'è valore, suggerisce metà del totale
         if (!inputImporto.value || parseFloat(inputImporto.value) >= totale) {
             inputImporto.value = (totale / 2).toFixed(2);
         }
