@@ -982,7 +982,7 @@ def genera_pdf(fattura_id):
         except:
             banca_selezionata = None
         
-    # 5. Recupera ddt e righe in base al tipo
+    # 5. Recupera ddt e righe in base al tipo (Messo in totale sicurezza numerica)
     ddt_list = []
     righe_ddt = []
     righe = []
@@ -999,18 +999,27 @@ def genera_pdf(fattura_id):
         righe_raw = cur.fetchall()
         for r in righe_raw:
             d = dict(r)
-            d["totale"] = float(d.get("quantita") or 0) * float(d.get("prezzo") or 0)
+            qta = float(d.get("quantita") if d.get("quantita") is not None else 0.0)
+            prz = float(d.get("prezzo") if d.get("prezzo") is not None else 0.0)
+            d["quantita"] = qta
+            d["prezzo"] = prz
+            d["totale"] = qta * prz
             righe_ddt.append(d)
+            righe.append(d) # Popoliamo anche righe come fallback per il template
     else:
         cur.execute("SELECT * FROM righe_fattura WHERE fattura_id = %s ORDER BY id ASC", (fattura_id,))
         righe_raw = cur.fetchall()
         for r in righe_raw:
             d = dict(r)
-            d["prezzo"] = d.get("prezzo_unitario", d.get("prezzo", 0.0))
-            d["totale"] = float(d.get("quantita") or 0) * float(d.get("prezzo") or 0)
-            righe.append(d)
+            # Controllo incrociato robusto sulle colonne prezzo_unitario / prezzo
+            p_raw = d.get("prezzo_unitario") if d.get("prezzo_unitario") is not None else d.get("prezzo")
+            qta = float(d.get("quantita") if d.get("quantita") is not None else 0.0)
+            prz = float(p_raw if p_raw is not None else 0.0)
             
-    cur.close()
+            d["quantita"] = qta
+            d["prezzo"] = prz
+            d["totale"] = qta * prz
+            righe.append(d)
 
     # 6. Calcoli economici
     valore_totale = float(f.get("totale", 0.0) or 0.0)
