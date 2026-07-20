@@ -122,8 +122,8 @@
                 <td>{{ r.descrizione }}</td>
                 <td>{{ r.unita_misura }}</td>
                 <td class="right">{{ r.quantita }}</td>
-                <td class="right">{{ r.prezzo }}&euro;</td>
-                <td class="right">{{ r.totale }}&euro;</td>
+                <td class="right">EUR {{ r.prezzo }}</td>
+                <td class="right">EUR {{ r.totale }}</td>
             </tr>
             {% endif %}{% endfor %}
         </tbody>
@@ -148,8 +148,8 @@
                 <td>{{ r.descrizione }}</td>
                 <td>{{ r.unita_misura }}</td>
                 <td class="right">{{ r.quantita }}</td>
-                <td class="right">{{ r.prezzo }}&euro;</td>
-                <td class="right">{{ r.totale }}&euro;</td>
+                <td class="right">EUR {{ r.prezzo }}</td>
+                <td class="right">EUR {{ r.totale }}</td>
             </tr>
             {% endfor %}
         </tbody>
@@ -161,11 +161,11 @@
     <tr>
         <td class="spazio"></td>
         <td class="box">
-            <div class="riga-totale">Imponibile: {{ imponibile }}&euro;</div>
+            <div class="riga-totale">Imponibile: EUR {{ imponibile }}</div>
             {% if fattura.regime_iva|string == "22" or fattura.regime_iva|string == "22.0" %}
-            <div class="riga-totale">IVA 22%: {{ iva }}&euro;</div>
+            <div class="riga-totale">IVA 22%: EUR {{ iva }}</div>
             {% endif %}
-            <div class="totale-finale">TOTALE {{ totale }}&euro;</div>
+            <div class="totale-finale">TOTALE EUR {{ totale }}</div>
         </td>
     </tr>
 </table>

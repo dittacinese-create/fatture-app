@@ -974,7 +974,6 @@ def genera_pdf(fattura_id):
         if f.get("banca_id") and f["banca_id"] in BANCHE:
             banca_selezionata = BANCHE[f["banca_id"]]
     except NameError:
-        # Se BANCHE non è definita globalmente, prova a importarla da config
         try:
             from config import BANCHE
             if f.get("banca_id") and f["banca_id"] in BANCHE:
@@ -982,7 +981,7 @@ def genera_pdf(fattura_id):
         except:
             banca_selezionata = None
         
-    # 5. Recupera ddt e righe in base al tipo (Messo in totale sicurezza numerica)
+    # 5. Recupera ddt e righe in base al tipo (Pre-formattiamo i numeri in stringhe)
     ddt_list = []
     righe_ddt = []
     righe = []
@@ -1001,27 +1000,31 @@ def genera_pdf(fattura_id):
             d = dict(r)
             qta = float(d.get("quantita") if d.get("quantita") is not None else 0.0)
             prz = float(d.get("prezzo") if d.get("prezzo") is not None else 0.0)
-            d["quantita"] = qta
-            d["prezzo"] = prz
-            d["totale"] = qta * prz
+            
+            # Forziamo la sovrascrittura con stringhe formattate a 2 decimali
+            d["quantita"] = f"{qta:.2f}"
+            d["prezzo"] = f"{prz:.2f}"
+            d["totale"] = f"{(qta * prz):.2f}"
             righe_ddt.append(d)
-            righe.append(d) # Popoliamo anche righe come fallback per il template
+            righe.append(d)
     else:
         cur.execute("SELECT * FROM righe_fattura WHERE fattura_id = %s ORDER BY id ASC", (fattura_id,))
         righe_raw = cur.fetchall()
         for r in righe_raw:
             d = dict(r)
-            # Controllo incrociato robusto sulle colonne prezzo_unitario / prezzo
             p_raw = d.get("prezzo_unitario") if d.get("prezzo_unitario") is not None else d.get("prezzo")
             qta = float(d.get("quantita") if d.get("quantita") is not None else 0.0)
             prz = float(p_raw if p_raw is not None else 0.0)
             
-            d["quantita"] = qta
-            d["prezzo"] = prz
-            d["totale"] = qta * prz
+            # Forziamo la sovrascrittura con stringhe formattate a 2 decimali
+            d["quantita"] = f"{qta:.2f}"
+            d["prezzo"] = f"{prz:.2f}"
+            d["totale"] = f"{(qta * prz):.2f}"
             righe.append(d)
+            
+    cur.close()
 
-    # 6. Calcoli economici
+    # 6. Calcoli economici stabili e pre-formattati
     valore_totale = float(f.get("totale", 0.0) or 0.0)
     try:
         aliquota = float(f.get("regime_iva", 22.0) or 22.0)
@@ -1031,7 +1034,12 @@ def genera_pdf(fattura_id):
     valore_imponibile = valore_totale / (1 + (aliquota / 100.0))
     valore_iva = valore_totale - valore_imponibile
 
-    # 7. Renderizza l'HTML del template (Passando dizionari puri e puliti)
+    # Sostituiamo i valori nel dizionario di fattura per evitare crash nei campi principali
+    f["totale_str"] = f"{valore_totale:.2f}"
+    f["imponibile_str"] = f"{valore_imponibile:.2f}"
+    f["iva_str"] = f"{valore_iva:.2f}"
+
+    # 7. Renderizza l'HTML del template
     html = render_template(
         "pdf_fattura.html", 
         fattura=f,
@@ -1041,15 +1049,20 @@ def genera_pdf(fattura_id):
         ddt_list=ddt_list,
         righe_ddt=righe_ddt,
         righe=righe,
-        imponibile=valore_imponibile,
-        iva=valore_iva,
-        totale=valore_totale,
+        imponibile=f"{valore_imponibile:.2f}",
+        iva=f"{valore_iva:.2f}",
+        totale=f"{valore_totale:.2f}",
         autoprint=False
     )
 
-    # 8. Genera il PDF in memoria (Rimosso il blocco rigido su pisa_status.err)
+    # 8. Genera il PDF in memoria con encoding esplicito per prevenire eccezioni asincrone
     pdf_buffer = io.BytesIO()
-    pisa.CreatePDF(io.BytesIO(html.encode("utf-8")), dest=pdf_buffer)
+    try:
+        # Usiamo l'approccio standard a oggetti per evitare eccezioni di contesto
+        pisa.pisaDocument(io.BytesIO(html.encode("utf-8")), pdf_buffer)
+    except Exception as pdf_error:
+        print(f"Errore xhtml2pdf: {pdf_error}")
+        return f"Errore interno del motore PDF: {pdf_error}", 500
         
     # 9. Prepara la risposta con il nome file personalizzato sicuro
     if cliente and "nome" in cliente:
