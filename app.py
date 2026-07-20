@@ -1212,6 +1212,10 @@ def delete_prodotto(prodotto_id):
 
 @app.route("/dashboard")
 def dashboard():
+    # Spostiamo l'importazione di psycopg2.extras per sicurezza, 
+    # ma assumendo che sia già disponibile, lo manteniamo sicuro e accessibile
+    import psycopg2.extras
+
     # 1. Recupera i parametri dei filtri dalla richiesta GET
     filtro_inizio = request.args.get("inizio", "").strip() or None
     filtro_fine = request.args.get("fine", "").strip() or None
@@ -1224,11 +1228,10 @@ def dashboard():
 
     db = get_db()
     
-    # CORREZIONE CRUCIALE: Usiamo DictCursor per poter usare f['chiave'] ed f.get('chiave')
-    import psycopg2.extras
+    # CORREZIONE CRUCIALE: Inizializziamo il cursore solo dopo esserci assicurati dell'importazione
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
 
-    # 2. Query allineata con i nomi reali delle colonne (numero, data, totale, note)
+    # 2. Query modificata per supportare sia f.cliente che f.cliente_nome nel template HTML
     query = """
         SELECT f.id,
                f.numero AS numero_fattura, 
@@ -1238,7 +1241,8 @@ def dashboard():
                f.stato_pagamento,
                f.data_pagamento,
                f.totale_pagato,
-               COALESCE(c.nome, 'Cliente Generico') as cliente_nome
+               COALESCE(c.nome, 'Cliente Generico') as cliente_nome,
+               COALESCE(c.nome, 'Cliente Generico') as cliente
         FROM fatture f
         LEFT JOIN clienti c ON f.cliente_id = c.id
         WHERE 1=1
