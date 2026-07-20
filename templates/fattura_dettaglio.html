@@ -351,10 +351,9 @@
 
 <script>
 function gestisciChiudiFattura(fatturaId) {
-    // Avviamo il download del backup completo di tutto il registro
+    // Avviamo il download del backup completo di tutto il registro senza ID nell'URL
     const link = document.createElement('a');
-    link.href = '/export_fattura_backup/' + fatturaId;
-    link.download = 'backup_registro_completo.txt'; // Cambiato il nome del file scaricato
+    link.href = '/export_fattura_backup';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -478,10 +477,9 @@ async function salvaFatturaUnificato() {
 
             // .toUpperCase() e .trim() evitano errori se lo stato è scritto "Chiusa", "chiusa" o ha spazi
             if (statoPagamentoVal.trim().toUpperCase() === "CHIUSA") {
-                console.log("Tentativo di download backup per fattura {{ fattura.id }}");
+                console.log("Tentativo di download backup generale");
                 const link = document.createElement('a');
-                link.href = '/export_fattura_backup/{{ fattura.id }}';
-                link.download = 'backup_fattura_{{ fattura.id }}.txt';
+                link.href = '/export_fattura_backup';
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
