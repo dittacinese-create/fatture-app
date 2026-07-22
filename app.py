@@ -190,7 +190,6 @@ def ricalcola_totale_fattura(cur, fattura_id):
                 aliquota = 22.0
 
     if tipo == "FORNITURA":
-        # Calcola la somma dei DDT associati
         cur.execute("""
             SELECT SUM(rd.quantita * rd.prezzo) 
             FROM righe_ddt rd
@@ -204,18 +203,14 @@ def ricalcola_totale_fattura(cur, fattura_id):
             cur.execute("UPDATE fatture SET totale = %s WHERE id = %s", (totale_ivato, fattura_id))
             
     else: # tipo MANUALE
-        # Controlla se l'utente ha inserito righe specifiche di dettaglio
         cur.execute("SELECT SUM(quantita * prezzo_unitario) FROM righe_fattura WHERE fattura_id = %s", (fattura_id,))
         res = cur.fetchone()[0]
         
-        # AGGIORNA IL TOTALE SOLO SE CI SONO EFFETTIVAMENTE DELLE RIGHE DI DETTAGLIO
         if res is not None:
             imponibile = float(res)
             totale_ivato = imponibile * (1 + (aliquota / 100.0))
             cur.execute("UPDATE fatture SET totale = %s WHERE id = %s", (totale_ivato, fattura_id))
-        
-        # Se res è None (fattura manuale semplice senza righe), NON esegue nessun UPDATE su 'totale'.
-           
+
 # ==============================================================================
 # 3. ROTTE FATTURE (VISTA, CREAZIONE, DETTAGLIO, MODIFICA)
 # ==============================================================================
@@ -392,17 +387,28 @@ def vedi_fattura(fattura_id):
     cur.close()
     
     fattura_dict = dict(f)
-    if "regime_iva" not in fattura_dict or fattura_dict["regime_iva"] is None: 
-        fattura_dict["regime_iva"] = "22"
+    regime_str = str(fattura_dict.get("regime_iva") or "22").strip().lower()
     
-    valore_totale = fattura_dict.get("totale", 0.0) or 0.0
-    try:
-        aliquota = float(fattura_dict["regime_iva"])
-    except:
-        aliquota = 22.0
+    # Determina l'aliquota per la visualizzazione
+    if any(term in regime_str for term in ["0", "reverse", "esente", "non imponibile"]):
+        aliquota = 0.0
+    else:
+        try:
+            import re
+            numeri = re.findall(r"\d+\.?\d*", regime_str)
+            aliquota = float(numeri[0]) if numeri else 22.0
+        except:
+            aliquota = 22.0
         
-    valore_imponibile = valore_totale / (1 + (aliquota / 100.0))
-    valore_iva = valore_totale - valore_imponibile
+    valore_totale = float(fattura_dict.get("totale", 0.0) or 0.0)
+    
+    # Calcolo Imponibile/IVA per la vista grafica
+    if aliquota == 0.0:
+        valore_imponibile = valore_totale
+        valore_iva = 0.0
+    else:
+        valore_imponibile = valore_totale / (1 + (aliquota / 100.0))
+        valore_iva = valore_totale - valore_imponibile
     
     if "totale_pagato" not in fattura_dict or fattura_dict["totale_pagato"] is None:
         fattura_dict["totale_pagato"] = valore_totale if fattura_dict.get("stato_pagamento") == "Pagata" else 0.0
