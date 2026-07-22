@@ -164,14 +164,17 @@ if DATABASE_URL:
 # 2. UTILS & HELPERS
 # ==============================================================================
 def ricalcola_totale_fattura(cur, fattura_id):
-    """Calcola l'imponibile e applica il regime IVA corretto (gestendo anche Reverse Charge / 0%)."""
-    cur.execute("SELECT tipo, regime_iva, totale FROM fatture WHERE id = %s", (fattura_id,))
+    """
+    Ricalcola il totale della fattura SOLO se ci sono elementi dinamici collegati (righe DDT o righe fattura).
+    Se è una fattura Manuale senza righe tabellari, lascia intatto il totale inserito dall'utente.
+    """
+    cur.execute("SELECT tipo, regime_iva FROM fatture WHERE id = %s", (fattura_id,))
     f = cur.fetchone()
     if not f:
         return
-    tipo, regime_iva_raw, vecchio_totale = f[0], f[1], f[2]
+    tipo, regime_iva_raw = f[0], f[1]
     
-    # Decodifica l'aliquota IVA in modo sicuro
+    # Decodifica l'aliquota IVA
     aliquota = 22.0
     if regime_iva_raw is not None:
         regime_str = str(regime_iva_raw).strip().lower()
@@ -179,7 +182,6 @@ def ricalcola_totale_fattura(cur, fattura_id):
             aliquota = 0.0
         else:
             try:
-                # Estrae solo i numeri dal campo IVA (es. "22%" -> 22.0)
                 import re
                 numeri = re.findall(r"\d+\.?\d*", regime_str)
                 if numeri:
@@ -188,6 +190,7 @@ def ricalcola_totale_fattura(cur, fattura_id):
                 aliquota = 22.0
 
     if tipo == "FORNITURA":
+        # Calcola la somma dei DDT associati
         cur.execute("""
             SELECT SUM(rd.quantita * rd.prezzo) 
             FROM righe_ddt rd
@@ -200,17 +203,19 @@ def ricalcola_totale_fattura(cur, fattura_id):
             totale_ivato = imponibile * (1 + (aliquota / 100.0))
             cur.execute("UPDATE fatture SET totale = %s WHERE id = %s", (totale_ivato, fattura_id))
             
-    else: # MANUALE
+    else: # tipo MANUALE
+        # Controlla se l'utente ha inserito righe specifiche di dettaglio
         cur.execute("SELECT SUM(quantita * prezzo_unitario) FROM righe_fattura WHERE fattura_id = %s", (fattura_id,))
         res = cur.fetchone()[0]
         
+        # AGGIORNA IL TOTALE SOLO SE CI SONO EFFETTIVAMENTE DELLE RIGHE DI DETTAGLIO
         if res is not None:
-            # Se ci sono righe nella tabella
             imponibile = float(res)
             totale_ivato = imponibile * (1 + (aliquota / 100.0))
             cur.execute("UPDATE fatture SET totale = %s WHERE id = %s", (totale_ivato, fattura_id))
-        # Se NON ci sono righe tabellari, la fattura manuale mantiene il valore inserito dall'utente.
-
+        
+        # Se res è None (fattura manuale semplice senza righe), NON esegue nessun UPDATE su 'totale'.
+           
 # ==============================================================================
 # 3. ROTTE FATTURE (VISTA, CREAZIONE, DETTAGLIO, MODIFICA)
 # ==============================================================================
@@ -463,8 +468,9 @@ def aggiorna_fattura_ajax(fattura_id):
     banca_id = data.get("banca_id")  
     note = data.get("note")
     totale_pagato = data.get("totale_pagato")
+    totale_manuale = data.get("totale")
     
-    # CORREZIONE: Mantiene il regime IVA selezionato o quello attuale senza forzare al 22%
+    # Mantiene il regime IVA selezionato o quello attuale
     regime_iva = data.get("regime_iva")
     if regime_iva is None:
         regime_iva = fattura_attuale["regime_iva"]
@@ -485,9 +491,10 @@ def aggiorna_fattura_ajax(fattura_id):
         SET numero=COALESCE(%s, numero), data=COALESCE(%s, data), data_scadenza=COALESCE(%s, data_scadenza),
             data_pagamento=COALESCE(%s, data_pagamento), stato_pagamento=COALESCE(%s, stato_pagamento), 
             stato=COALESCE(%s, stato), banca_id=COALESCE(%s, banca_id), regime_iva=COALESCE(%s, regime_iva), 
-            note=%s, totale_pagato=COALESCE(%s, totale_pagato)
+            note=%s, totale_pagato=COALESCE(%s, totale_pagato),
+            totale=COALESCE(%s, totale)
         WHERE id=%s
-    """, (numero, data_doc, data_scadenza, data_pagamento, stato_pagamento, stato, banca_id, regime_iva, note, totale_pagato, fattura_id))
+    """, (numero, data_doc, data_scadenza, data_pagamento, stato_pagamento, stato, banca_id, regime_iva, note, totale_pagato, totale_manuale, fattura_id))
         
     db.commit()
     ricalcola_totale_fattura(cur, fattura_id)
