@@ -160,18 +160,17 @@ def init_db():
 if DATABASE_URL:
     init_db()
 
-
 # ==============================================================================
 # 2. UTILS & HELPERS
 # ==============================================================================
 
 def ricalcola_totale_fattura(cur, fattura_id):
     """Calcola la somma imponibile basandosi sul tipo di fattura e aggiorna il totale ivato."""
-    cur.execute("SELECT tipo, regime_iva FROM fatture WHERE id = %s", (fattura_id,))
+    cur.execute("SELECT tipo, regime_iva, totale FROM fatture WHERE id = %s", (fattura_id,))
     f = cur.fetchone()
     if not f:
         return
-    tipo, regime_iva_raw = f[0], f[1] or "22"
+    tipo, regime_iva_raw, vecchio_totale = f[0], f[1] or "22", f[2] or 0.0
     
     try:
         aliquota = float(regime_iva_raw)
@@ -187,10 +186,16 @@ def ricalcola_totale_fattura(cur, fattura_id):
             JOIN ddt d ON rd.ddt_id = d.id
             WHERE d.fattura_id = %s
         """, (fattura_id,))
-        imponibile_totale = cur.fetchone()[0] or 0.0
+        res = cur.fetchone()[0]
+        imponibile_totale = res if res is not None else 0.0
     else:
         cur.execute("SELECT SUM(quantita * prezzo_unitario) FROM righe_fattura WHERE fattura_id = %s", (fattura_id,))
-        imponibile_totale = cur.fetchone()[0] or 0.0
+        res = cur.fetchone()[0]
+        if res is not None:
+            imponibile_totale = res
+        else:
+            # Preserva il totale manuale se la fattura non usa righe tabellari
+            imponibile_totale = vecchio_totale / (1 + (aliquota / 100.0)) if vecchio_totale > 0 else 0.0
 
     totale_ivato = imponibile_totale * (1 + (aliquota / 100.0))
     cur.execute("UPDATE fatture SET totale = %s WHERE id = %s", (totale_ivato, fattura_id))
@@ -252,7 +257,6 @@ def fatture():
         "fatture.html", 
         fatture=elenco_fatture, 
         password_eliminazione=PASSWORD_ACCESSO,
-        # Rimanda i valori correnti al template per mantenere i campi compilati
         filtro_cliente=filtro_cliente or "",
         filtro_stato=filtro_stato or "",
         filtro_tipo=filtro_tipo or ""
@@ -301,11 +305,8 @@ def nueva_fattura():
         stato_pagamento = request.form.get("stato_pagamento", "Non pagata")
         stato = request.form.get("stato", "BOZZA")
         
-        # Regola 2: Se fattura FORNITURA, l'IVA è bloccata al 22%
-        if tipo == "FORNITURA":
-            regime_iva = "22"
-        else:
-            regime_iva = request.form.get("regime_iva", "22")
+        # CORREZIONE: Permette di impostare l'IVA anche a 0 (es. Reverse Charge)
+        regime_iva = request.form.get("regime_iva", "22")
 
         try:
             cur.execute("""
@@ -353,7 +354,6 @@ def vedi_fattura(fattura_id):
     righe = []
     
     if f["tipo"] == "FORNITURA":
-        # CORREZIONE: Ordina i DDT dal primo inserito (in alto) all'ultimo (in basso)
         cur.execute("SELECT * FROM ddt WHERE fattura_id = %s ORDER BY id ASC", (fattura_id,))
         ddt_list = cur.fetchall()
         
@@ -377,7 +377,7 @@ def vedi_fattura(fattura_id):
     cur.close()
     
     fattura_dict = dict(f)
-    if "regime_iva" not in fattura_dict or not fattura_dict["regime_iva"]: 
+    if "regime_iva" not in fattura_dict or fattura_dict["regime_iva"] is None: 
         fattura_dict["regime_iva"] = "22"
     
     valore_totale = fattura_dict.get("totale", 0.0) or 0.0
@@ -412,8 +412,7 @@ def aggiorna_fattura_ajax(fattura_id):
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
-    # Controlliamo lo stato attuale della fattura
-    cur.execute("SELECT stato, tipo FROM fatture WHERE id = %s", (fattura_id,))
+    cur.execute("SELECT stato, tipo, regime_iva FROM fatture WHERE id = %s", (fattura_id,))
     fattura_attuale = cur.fetchone()
     if not fattura_attuale:
         cur.close()
@@ -425,7 +424,7 @@ def aggiorna_fattura_ajax(fattura_id):
     is_json = request.is_json
     data = request.get_json() if is_json else request.form
     
-    # Regola 3: Se CHIUSA, si possono variare SOLO le descrizioni (o note) previo inserimento password
+    # Se CHIUSA, gestisci sblocco tramite password
     if fattura_attuale["stato"] == "CHIUSA":
         password = data.get("password")
         if not password or password != PASSWORD_ACCESSO:
@@ -435,7 +434,6 @@ def aggiorna_fattura_ajax(fattura_id):
             flash("Impossibile modificare una fattura CHIUSA senza la password corretta.", "danger")
             return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
         
-        # Se la password è corretta ed è CHIUSA, aggiorniamo unicamente le note (campo di testo descrittivo)
         note = data.get("note")
         cur.execute("UPDATE fatture SET note = %s WHERE id = %s", (note, fattura_id))
         db.commit()
@@ -445,7 +443,7 @@ def aggiorna_fattura_ajax(fattura_id):
         flash("Note della fattura chiusa aggiornate con successo.", "success")
         return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
 
-    # Logica standard se la fattura è APERTA/BOZZA
+    # Logica per fattura BOZZA/APERTA
     numero = data.get("numero")
     data_doc = data.get("data")
     data_scadenza = data.get("data_scadenza")
@@ -456,11 +454,10 @@ def aggiorna_fattura_ajax(fattura_id):
     note = data.get("note")
     totale_pagato = data.get("totale_pagato")
     
-    # Regola 2 bis: Se il tipo è (o diventa) FORNITURA, sovrascriviamo l'IVA al 22%
-    if fattura_attuale["tipo"] == "FORNITURA" or data.get("tipo") == "FORNITURA":
-        regime_iva = "22"
-    else:
-        regime_iva = data.get("regime_iva")
+    # CORREZIONE: Mantiene il regime IVA selezionato o quello attuale senza forzare al 22%
+    regime_iva = data.get("regime_iva")
+    if regime_iva is None:
+        regime_iva = fattura_attuale["regime_iva"]
 
     if stato_pagamento == "Pagata":
         cur.execute("SELECT totale FROM fatture WHERE id = %s", (fattura_id,))
@@ -512,7 +509,6 @@ def delete_fattura(fattura_id):
     cur.close()
     flash("Fattura eliminata con successo.", "success")
     return redirect(url_for("fatture"))
-
 
 # ==============================================================================
 # 4. GESTIONE RIGHE MANUALI (TIPO MANUALE)
