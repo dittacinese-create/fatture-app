@@ -165,21 +165,20 @@ if DATABASE_URL:
 # ==============================================================================
 
 def ricalcola_totale_fattura(cur, fattura_id):
-    """Calcola la somma imponibile basandosi sul tipo di fattura e aggiorna il totale ivato."""
+    """Calcola la somma imponibile e aggiorna il totale solo se ci sono righe/DDT collegati."""
     cur.execute("SELECT tipo, regime_iva, totale FROM fatture WHERE id = %s", (fattura_id,))
     f = cur.fetchone()
     if not f:
         return
-    tipo, regime_iva_raw, vecchio_totale = f[0], f[1] or "22", f[2] or 0.0
+    tipo, regime_iva_raw, vecchio_totale = f[0], f[1] or "22", f[2]
     
     try:
         aliquota = float(regime_iva_raw)
     except:
         aliquota = 22.0
 
-    imponibile_totale = 0.0
-    
     if tipo == "FORNITURA":
+        # Calcola dai DDT
         cur.execute("""
             SELECT SUM(rd.quantita * rd.prezzo) 
             FROM righe_ddt rd
@@ -187,19 +186,22 @@ def ricalcola_totale_fattura(cur, fattura_id):
             WHERE d.fattura_id = %s
         """, (fattura_id,))
         res = cur.fetchone()[0]
-        imponibile_totale = res if res is not None else 0.0
-    else:
+        if res is not None:
+            totale_ivato = float(res) * (1 + (aliquota / 100.0))
+            cur.execute("UPDATE fatture SET totale = %s WHERE id = %s", (totale_ivato, fattura_id))
+            
+    else: # MANUALE
+        # Controlla se esistono righe nella tabella righe_fattura
         cur.execute("SELECT SUM(quantita * prezzo_unitario) FROM righe_fattura WHERE fattura_id = %s", (fattura_id,))
         res = cur.fetchone()[0]
+        
+        # AGGIORNA IL TOTALE SOLO SE CI SONO EFFETTIVAMENTE DELLE RIGHE!
         if res is not None:
-            imponibile_totale = res
-        else:
-            # Preserva il totale manuale se la fattura non usa righe tabellari
-            imponibile_totale = vecchio_totale / (1 + (aliquota / 100.0)) if vecchio_totale > 0 else 0.0
-
-    totale_ivato = imponibile_totale * (1 + (aliquota / 100.0))
-    cur.execute("UPDATE fatture SET totale = %s WHERE id = %s", (totale_ivato, fattura_id))
-
+            imponibile_totale = float(res)
+            totale_ivato = imponibile_totale * (1 + (aliquota / 100.0))
+            cur.execute("UPDATE fatture SET totale = %s WHERE id = %s", (totale_ivato, fattura_id))
+        # Se res è None (cioè non ci sono righe tabellari), NON TOCCHIAMO il campo 'totale' nel DB!
+        
 
 # ==============================================================================
 # 3. ROTTE FATTURE (VISTA, CREAZIONE, DETTAGLIO, MODIFICA)
