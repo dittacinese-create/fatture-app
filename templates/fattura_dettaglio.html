@@ -331,10 +331,13 @@
 <div class="card mt-2">
     <div class="totali">
         <p>Totale imponibile: <strong>€ {{ "%.2f"|format(imponibile) }}</strong></p>
-        {% if fattura.regime_iva == "22" %}
-        <p>IVA 22%: <strong>€ {{ "%.2f"|format(iva) }}</strong></p>
+        {% if fattura.regime_iva|string in ["22", "22.0"] %}
+            <p>IVA 22%: <strong>€ {{ "%.2f"|format(iva) }}</strong></p>
+            <p class="totale-finale">Totale fattura: € {{ "%.2f"|format(totale) }}</p>
+        {% else %}
+            <!-- Se senza IVA, il totale corrisponde solo all'imponibile -->
+            <p class="totale-finale">Totale fattura: € {{ "%.2f"|format(imponibile) }}</p>
         {% endif %}
-        <p class="totale-finale">Totale fattura: € {{ "%.2f"|format(totale) }}</p>
     </div>
     {% if nota_iva %}
     <div class="nota-rc mt-1">{{ nota_iva }}</div>
@@ -475,7 +478,6 @@ async function salvaFatturaUnificato() {
         if (resTestata.ok && resPagamento.ok) {
             s.style.display = "inline";
 
-            // .toUpperCase() e .trim() evitano errori se lo stato è scritto "Chiusa", "chiusa" o ha spazi
             if (statoPagamentoVal.trim().toUpperCase() === "CHIUSA") {
                 console.log("Tentativo di download backup generale");
                 const link = document.createElement('a');
@@ -838,4 +840,4 @@ document.addEventListener("DOMContentLoaded", function() {
     {% endif %}
 });
 </script>
-{% endblock %}
+{% endblock %} 
