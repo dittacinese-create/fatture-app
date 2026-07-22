@@ -157,9 +157,11 @@
         <td class="box-totali">
             <div class="riga-totale">Imponibile: {{ imponibile }}€</div>
             {% if fattura.regime_iva|string == "22" or fattura.regime_iva|string == "22.0" %}
-            <div class="riga-totale">IVA 22%: {{ iva }}€</div>
+                <div class="riga-totale">IVA 22%: {{ iva }}€</div>
+                <div class="totale-finale">TOTALE {{ totale }}€</div>
+            {% else %}
+                <div class="totale-finale">TOTALE {{ imponibile }}€</div>
             {% endif %}
-            <div class="totale-finale">TOTALE {{ totale }}€</div>
         </td>
     </tr>
 </table>
