@@ -919,6 +919,7 @@ def delete_riga_ddt(riga_id, fattura_id):
         return jsonify({"success": True})
     return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
 
+
 # ==============================================================================
 # 6. ESPORTAZIONE PDF (GENERAZIONE E DOWNLOAD DIRETTO)
 # ==============================================================================
@@ -968,7 +969,7 @@ def genera_pdf(fattura_id):
             "email": "info@lazuaditta.it"
         }
         
-    # 4. Associa i dettagli della banca selezionata usando il dizionario BANCHE globale
+    # 4. Associa i dettagli della banca selezionata
     banca_selezionata = None
     try:
         if f.get("banca_id") and f["banca_id"] in BANCHE:
@@ -978,7 +979,7 @@ def genera_pdf(fattura_id):
             from config import BANCHE
             if f.get("banca_id") and f["banca_id"] in BANCHE:
                 banca_selezionata = BANCHE[f["banca_id"]]
-        except:
+        except Exception:
             banca_selezionata = None
         
     # 5. Recupera ddt e righe in base al tipo
@@ -1023,26 +1024,21 @@ def genera_pdf(fattura_id):
     cur.close()
 
     # 6. CALCOLI ECONOMICI CORRETTI
-    # 'totale' nel DB rappresenta la somma imponibile delle righe
     valore_imponibile = float(f.get("totale", 0.0) or 0.0)
-    
     regime_str = str(f.get("regime_iva", "")).strip()
     
-    # Se il regime è IVA 22%, calcola l'IVA e il totale lordo
     if regime_str in ["22", "22.0"]:
         valore_iva = valore_imponibile * 0.22
         valore_totale = valore_imponibile + valore_iva
     else:
-        # Se Senza IVA / Reverse Charge, l'IVA è 0 e il totale è pari all'imponibile
         valore_iva = 0.0
         valore_totale = valore_imponibile
 
-    # Stringhe formattate
     f["totale_str"] = f"{valore_totale:.2f}"
     f["imponibile_str"] = f"{valore_imponibile:.2f}"
     f["iva_str"] = f"{valore_iva:.2f}"
 
-    # FIX DATA: Converte la data da AAAA-MM-GG a GG/MM/AAAA
+    # Formattazione data
     if f.get("data"):
         try:
             if hasattr(f["data"], "strftime"):
@@ -1050,12 +1046,12 @@ def genera_pdf(fattura_id):
             else:
                 dt = datetime.strptime(str(f["data"]), "%Y-%m-%d")
                 f["data_formattata"] = dt.strftime("%d/%m/%Y")
-        except:
+        except Exception:
             f["data_formattata"] = f["data"]
     else:
         f["data_formattata"] = ""
 
-    # 7. Renderizza l'HTML del template
+    # 7. Renderizza l'HTML del template PDF
     html = render_template(
         "pdf_fattura.html", 
         fattura=f,
@@ -1078,7 +1074,7 @@ def genera_pdf(fattura_id):
     except Exception as pdf_error:
         return f"Errore interno del motore PDF: {pdf_error}", 500
         
-    # 9. Prepara la risposta
+    # 9. Prepara la risposta di download
     if cliente and "nome" in cliente:
         nome_cliente_pulito = str(cliente["nome"]).replace(" ", "").strip()
     else:
@@ -1092,6 +1088,7 @@ def genera_pdf(fattura_id):
     response.headers['Content-Disposition'] = f'attachment; filename={filename}'
     
     return response
+
 
 # ==============================================================================
 # 7. SEZIONE CLIENTI
@@ -1176,8 +1173,10 @@ def prodotti():
         nome = request.form.get("nome")
         prezzo_base = request.form.get("prezzo_base", 0.0)
         unita_misura = request.form.get("unita_misura", "mq")
-        try: prezzo_base = float(prezzo_base)
-        except: prezzo_base = 0.0
+        try: 
+            prezzo_base = float(prezzo_base)
+        except (ValueError, TypeError): 
+            prezzo_base = 0.0
         cur.execute("INSERT INTO prodotti (nome, prezzo_base, unita_misura) VALUES (%s, %s, %s)", (nome, prezzo_base, unita_misura))
         db.commit()
         return redirect(url_for("prodotti"))
@@ -1191,7 +1190,7 @@ def prodotti():
 def modifica_prodotto(prodotto_id):
     db = get_db()
     cur = db.cursor()
-    data = request.get_json()
+    data = request.get_json() or {}
     cur.execute("UPDATE prodotti SET nome=%s, prezzo_base=%s, unita_misura=%s WHERE id=%s", (data.get("nome"), data.get("prezzo_base", 0.0), data.get("unita_misura", "mq"), prodotto_id))
     db.commit()
     cur.close()
@@ -1209,12 +1208,10 @@ def delete_prodotto(prodotto_id):
 
 # ==============================================================================
 # 9. DASHBOARD & STATISTICHE
-# =============================================================================
+# ==============================================================================
 
 @app.route("/dashboard")
 def dashboard():
-    # Spostiamo l'importazione di psycopg2.extras per sicurezza, 
-    # ma assumendo che sia già disponibile, lo manteniamo sicuro e accessibile
     import psycopg2.extras
 
     # 1. Recupera i parametri dei filtri dalla richiesta GET
@@ -1228,11 +1225,9 @@ def dashboard():
         filtro_inizio = filtro_fine = filtro_cliente = filtro_tipo = filtro_stato = None
 
     db = get_db()
-    
-    # CORREZIONE CRUCIALE: Inizializziamo il cursore solo dopo esserci assicurati dell'importazione
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
 
-    # 2. Query modificata per supportare sia f.cliente che f.cliente_nome nel template HTML
+    # 2. Query per recuperare le fatture filtrate
     query = """
         SELECT f.id,
                f.numero AS numero_fattura, 
@@ -1275,7 +1270,7 @@ def dashboard():
         print(f"Errore query fatture: {e}")
         fatture = []
 
-    # 3. Calcolo dei KPI dinamici basati sulla colonna corretta del database
+    # 3. Calcolo KPI
     totale_generale = 0.0
     totale_pagato = 0.0
 
@@ -1291,7 +1286,7 @@ def dashboard():
 
     totale_mancante = max(0.0, totale_generale - totale_pagato)
 
-    # 4. Recupera la lista dei clienti per il menu a tendina
+    # 4. Elenco clienti per il menu a tendina
     try:
         cur.execute("SELECT nome FROM clienti ORDER BY nome ASC")
         clienti_lista = [r["nome"] for r in cur.fetchall()]
@@ -1300,7 +1295,7 @@ def dashboard():
 
     cur.close()
 
-    # 5. Recuperiamo la password corretta direttamente dal file config.py
+    # 5. Recupera la password di sblocco
     from config import PASSWORD_ACCESSO
     password_sblocco = PASSWORD_ACCESSO
 
@@ -1319,6 +1314,7 @@ def dashboard():
         password_sblocco=password_sblocco
     )
 
+
 # ==============================================================================
 # 10. API DI AGGIORNAMENTO STATO IN TEMPO REALE (DASHBOARD)
 # ==============================================================================
@@ -1334,11 +1330,10 @@ def api_aggiorna_stato():
     if not fattura_id:
         return jsonify({"success": False, "message": "ID fattura mancante."}), 400
 
-    # Conversione sicura dell'importo pagato
     if importo_pagato is not None and str(importo_pagato).strip() != "":
         try:
             importo_pagato = float(importo_pagato)
-        except ValueError:
+        except (ValueError, TypeError):
             importo_pagato = None
     else:
         importo_pagato = None
@@ -1347,14 +1342,12 @@ def api_aggiorna_stato():
     cur = db.cursor()
 
     try:
-        # Forza la creazione della colonna corretta se mancante
         try:
             cur.execute("ALTER TABLE fatture ADD COLUMN IF NOT EXISTS totale_pagato NUMERIC(10,2) DEFAULT 0.0;")
             db.commit()
         except Exception:
             db.rollback()
 
-        # Aggiorna usando 'totale_pagato' (colonna reale del DB)
         cur.execute("""
             UPDATE fatture 
             SET stato_pagamento = %s, 
@@ -1367,13 +1360,14 @@ def api_aggiorna_stato():
         return jsonify({"success": True})
     except Exception as e:
         db.rollback()
-        print(f"Errore durante l'aggiornamento dello stato della fattura {fattura_id}: {e}")
+        print(f"Errore aggiornamento stato fattura {fattura_id}: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
     finally:
         cur.close()
 
+
 # ==============================================================================
-# 11.NOTE 
+# 11. NOTE 
 # ==============================================================================
 
 @app.route("/note")
@@ -1381,7 +1375,6 @@ def note_page():
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
-    # --- BLOCCO DI CORREZIONE AUTOMATICA SCHEMA ---
     try:
         cur.execute("""
             CREATE TABLE IF NOT EXISTS note (
@@ -1395,9 +1388,8 @@ def note_page():
         db.commit()
     except Exception as e:
         db.rollback()
-        print(f"Errore creazione iniziale tabella note: {e}")
+        print(f"Errore creazione tabella note: {e}")
 
-    # Ora eseguiamo la query forzando il cast a TEXT di tutto per evitare conflitti
     try:
         cur.execute("""
             SELECT id, titolo, contenuto, 
@@ -1440,7 +1432,6 @@ def nuova_nota_api():
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     data_oggi = datetime.now().strftime("%Y-%m-%d")
     try:
-        # Usiamo un approccio sicuro: inseriamo i valori provando a fare il cast esplicito a TEXT
         cur.execute("""
             INSERT INTO note (titolo, contenuto, data_creazione, data_modifica) 
             VALUES ('Senza titolo', '', %s::TEXT, %s::TEXT) 
@@ -1448,10 +1439,9 @@ def nuova_nota_api():
         """, (data_oggi, data_oggi))
         nuovo_id = cur.fetchone()["id"]
         db.commit()
-        return jsonify({"success": True, "id": nuevo_id})
-    except Exception as e:
+        return jsonify({"success": True, "id": nuovo_id})
+    except Exception:
         db.rollback()
-        # Se fallisce per mismatch di tipo (colonne effettivamente TIMESTAMP nel DB fisico), usiamo NOW()
         try:
             cur.execute("""
                 INSERT INTO note (titolo, contenuto, data_creazione, data_modifica) 
@@ -1463,7 +1453,7 @@ def nuova_nota_api():
             return jsonify({"success": True, "id": nuovo_id})
         except Exception as e_inner:
             db.rollback()
-            print(f"Errore drastico creazione nota: {e_inner}")
+            print(f"Errore creazione nota: {e_inner}")
             return jsonify({"success": False, "error": str(e_inner)}), 500
     finally:
         cur.close()
@@ -1486,9 +1476,8 @@ def salva_nota_api(id):
         """, (titolo if titolo else "Senza titolo", contenuto, data_oggi, id))
         db.commit()
         return jsonify({"success": True})
-    except Exception as e:
+    except Exception:
         db.rollback()
-        # Fallback nel caso in cui data_modifica sia rimasto rigidamente un TIMESTAMP
         try:
             cur.execute("""
                 UPDATE note 
@@ -1499,7 +1488,7 @@ def salva_nota_api(id):
             return jsonify({"success": True})
         except Exception as e_inner:
             db.rollback()
-            print(f"Errore drastico salvataggio nota: {e_inner}")
+            print(f"Errore salvataggio nota: {e_inner}")
             return jsonify({"success": False, "error": str(e_inner)}), 500
     finally:
         cur.close()
@@ -1519,8 +1508,9 @@ def elimina_nota_api(id):
     finally:
         cur.close()
 
+
 # ==============================================================================
-# 12. DOWNLOAD DATI CLIENTI, PRODOTTI, FATTURE
+# 12. DOWNLOAD DATI CLIENTI, PRODOTTI, FATTURE (BACKUP TXT)
 # ==============================================================================
 
 @app.route("/export_fattura_backup")
@@ -1541,21 +1531,20 @@ def export_fattura_backup():
         cur.close()
         return "Nessuna fattura trovata", 404
 
-    # Recupera i dettagli della fattura più recente per la riga descrittiva dell'azione
     ultima_fattura = tutte_fatture[0]
     num_ultima = ultima_fattura.get('numero', '-')
     cliente_ultimo = ultima_fattura.get('cliente_nome', 'Sconosciuto')
 
-    # Costruzione del file di testo
     output = f"Aggiunta Fattura n. {num_ultima}  {cliente_ultimo}\n"
     output += "=========================================================================================\n"
     output += "                           REPORT GENERALE BACKUP FATTURE                                \n"
     output += "=========================================================================================\n\n"
     
     for f in tutte_fatture:
+        imp = float(f.get('totale', 0.0) or 0.0)
         output += f"N. FATTURA: {f.get('numero', '-')} | DATA: {f.get('data', '-')}\n"
         output += f"CLIENTE:    {f.get('cliente_nome', 'Sconosciuto')}\n"
-        output += f"IMPORTO:    € {f.get('totale', 0.0):.2f}\n"
+        output += f"IMPORTO:    € {imp:.2f}\n"
         output += f"STATO PAG.: {f.get('stato_pagamento', '-')}\n"
         output += f"NOTE/CANT.: {f.get('note', '') or '-'}\n"
         output += "-----------------------------------------------------------------------------------------\n"
@@ -1566,23 +1555,21 @@ def export_fattura_backup():
     filename = f"fatture_{timestamp}.txt"
     return Response(output, mimetype="text/plain", headers={"Content-Disposition": f"attachment;filename={filename}"})
 
+
 @app.route("/export_clienti_backup")
 def export_clienti_backup():
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
-    # Prendiamo tutti i clienti in ordine alfabetico per il report
     cur.execute("SELECT * FROM clienti ORDER BY nome ASC")
     clienti = cur.fetchall()
     
-    # Identifichiamo l'ultimo cliente inserito in assoluto tramite ID più alto
     cur.execute("SELECT nome FROM clienti ORDER BY id DESC LIMIT 1")
     ultimo_inserito = cur.fetchone()
     cur.close()
     
     nome_ultimo = ultimo_inserito['nome'] if ultimo_inserito else '-'
     
-    # Costruzione dell'output con la riga dell'azione in cima
     output = f"Aggiunto Cliente {nome_ultimo}\n"
     output += "========================================\n"
     output += "=== LISTA CLIENTI ===\n"
@@ -1610,29 +1597,28 @@ def export_prodotti_backup():
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
-    # Prendiamo tutti i prodotti in ordine alfabetico per il report
     cur.execute("SELECT * FROM prodotti ORDER BY nome ASC")
     prodotti = cur.fetchall()
     
-    # Identifichiamo l'ultimo prodotto inserito in assoluto tramite ID più alto
     cur.execute("SELECT nome FROM prodotti ORDER BY id DESC LIMIT 1")
     ultimo_inserito = cur.fetchone()
     cur.close()
     
     nome_ultimo = ultimo_inserito['nome'] if ultimo_inserito else '-'
     
-    # Costruzione dell'output con la riga dell'azione in cima
     output = f"Aggiunto Prodotto {nome_ultimo}\n"
     output += "========================================\n"
     output += "=== LISTA PRODOTTI ===\n"
     output += "========================================\n\n"
     
     for p in prodotti:
-        output += f"ID: {p['id']}\nNome: {p['nome']}\nUnità di Misura: {p['unita_misura']}\nPrezzo Base: €{p['prezzo_base']:.2f}\n----------------------------------------\n"
+        prezzo_base = float(p.get('prezzo_base', 0.0) or 0.0)
+        output += f"ID: {p['id']}\nNome: {p['nome']}\nUnità di Misura: {p['unita_misura']}\nPrezzo Base: €{prezzo_base:.2f}\n----------------------------------------\n"
     
     timestamp = datetime.now().strftime("%d.%m.%y_%H.%M")
     filename = f"prodotti_{timestamp}.txt"
     return Response(output, mimetype="text/plain", headers={"Content-Disposition": f"attachment;filename={filename}"})
+
 
 # ==============================================================================
 # 13. AVVIO APPLICAZIONE
