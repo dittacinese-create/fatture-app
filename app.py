@@ -919,7 +919,6 @@ def delete_riga_ddt(riga_id, fattura_id):
         return jsonify({"success": True})
     return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
 
-
 # ==============================================================================
 # 6. ESPORTAZIONE PDF (GENERAZIONE E DOWNLOAD DIRETTO)
 # ==============================================================================
@@ -930,6 +929,7 @@ def genera_pdf(fattura_id):
     import psycopg2.extras
     from xhtml2pdf import pisa
     from flask import make_response, render_template
+    from datetime import datetime
 
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
@@ -981,7 +981,7 @@ def genera_pdf(fattura_id):
         except:
             banca_selezionata = None
         
-    # 5. Recupera ddt e righe in base al tipo (Pre-formattiamo i numeri in stringhe)
+    # 5. Recupera ddt e righe in base al tipo
     ddt_list = []
     righe_ddt = []
     righe = []
@@ -1001,7 +1001,6 @@ def genera_pdf(fattura_id):
             qta = float(d.get("quantita") if d.get("quantita") is not None else 0.0)
             prz = float(d.get("prezzo") if d.get("prezzo") is not None else 0.0)
             
-            # Forziamo la sovrascrittura con stringhe formattate a 2 decimali
             d["quantita"] = f"{qta:.2f}"
             d["prezzo"] = f"{prz:.2f}"
             d["totale"] = f"{(qta * prz):.2f}"
@@ -1016,7 +1015,6 @@ def genera_pdf(fattura_id):
             qta = float(d.get("quantita") if d.get("quantita") is not None else 0.0)
             prz = float(p_raw if p_raw is not None else 0.0)
             
-            # Forziamo la sovrascrittura con stringhe formattate a 2 decimali
             d["quantita"] = f"{qta:.2f}"
             d["prezzo"] = f"{prz:.2f}"
             d["totale"] = f"{(qta * prz):.2f}"
@@ -1024,29 +1022,32 @@ def genera_pdf(fattura_id):
             
     cur.close()
 
-    # 6. Calcoli economici stabili e pre-formattati
-    valore_totale = float(f.get("totale", 0.0) or 0.0)
-    try:
-        aliquota = float(f.get("regime_iva", 22.0) or 22.0)
-    except:
-        aliquota = 22.0
-        
-    valore_imponibile = valore_totale / (1 + (aliquota / 100.0))
-    valore_iva = valore_totale - valore_imponibile
+    # 6. CALCOLI ECONOMICI CORRETTI
+    # 'totale' nel DB rappresenta la somma imponibile delle righe
+    valore_imponibile = float(f.get("totale", 0.0) or 0.0)
+    
+    regime_str = str(f.get("regime_iva", "")).strip()
+    
+    # Se il regime è IVA 22%, calcola l'IVA e il totale lordo
+    if regime_str in ["22", "22.0"]:
+        valore_iva = valore_imponibile * 0.22
+        valore_totale = valore_imponibile + valore_iva
+    else:
+        # Se Senza IVA / Reverse Charge, l'IVA è 0 e il totale è pari all'imponibile
+        valore_iva = 0.0
+        valore_totale = valore_imponibile
 
-    # Sostituiamo i valori nel dizionario di fattura per evitare crash nei campi principali
+    # Stringhe formattate
     f["totale_str"] = f"{valore_totale:.2f}"
     f["imponibile_str"] = f"{valore_imponibile:.2f}"
     f["iva_str"] = f"{valore_iva:.2f}"
 
-    # FIX DATA: Converte la data da AAAA-MM-GG a GG/MM/AAAA se presente
+    # FIX DATA: Converte la data da AAAA-MM-GG a GG/MM/AAAA
     if f.get("data"):
         try:
-            # Se è già un oggetto datetime/date
             if hasattr(f["data"], "strftime"):
                 f["data_formattata"] = f["data"].strftime("%d/%m/%Y")
             else:
-                # Se è una stringa (es. "2026-07-13")
                 dt = datetime.strptime(str(f["data"]), "%Y-%m-%d")
                 f["data_formattata"] = dt.strftime("%d/%m/%Y")
         except:
@@ -1077,7 +1078,7 @@ def genera_pdf(fattura_id):
     except Exception as pdf_error:
         return f"Errore interno del motore PDF: {pdf_error}", 500
         
-    # 9. Prepara la risposta con il nome file personalizzato sicuro
+    # 9. Prepara la risposta
     if cliente and "nome" in cliente:
         nome_cliente_pulito = str(cliente["nome"]).replace(" ", "").strip()
     else:
