@@ -933,7 +933,7 @@ def delete_riga_ddt(riga_id, fattura_id):
 def genera_pdf_fattura(fattura_id):
     import psycopg2.extras
     from io import BytesIO
-    from xhtml2pdf import pisa  # Assicurati che xhtml2pdf sia importato
+    from xhtml2pdf import pisa
 
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
@@ -958,14 +958,13 @@ def genera_pdf_fattura(fattura_id):
             cur.close()
             return "Fattura non trovata", 404
 
-        # Convertiamo la riga in un dizionario standard per sicurezza
         fattura_dict = dict(fattura)
 
-        # 2. Recupera le righe della fattura (manuale)
-        cur.execute("SELECT * FROM righe_fatture WHERE fattura_id = %s ORDER BY id ASC", (fattura_id,))
+        # 2. Recupera le righe della fattura (NOME TABELLA CORRETTO: righe_fattura)
+        cur.execute("SELECT * FROM righe_fattura WHERE fattura_id = %s ORDER BY id ASC", (fattura_id,))
         righe_manuali = [dict(r) for r in cur.fetchall()]
 
-        # 3. Recupera le righe dei DDT (se fornitura)
+        # 3. Recupera le righe dei DDT (se fattura di tipo Fornitura)
         cur.execute("""
             SELECT rd.* 
             FROM righe_ddt rd
@@ -975,22 +974,20 @@ def genera_pdf_fattura(fattura_id):
         """, (fattura_id,))
         righe_ddt = [dict(r) for r in cur.fetchall()]
 
-        # Uniamo le righe per il calcolo totale
         tutte_le_righe = righe_manuali + righe_ddt
 
-        # 4. Calcolo imponibile robusto
+        # 4. Calcolo imponibile
         imponibile = 0.0
         for r in tutte_le_righe:
             imp = r.get("totale")
             if imp is None:
-                # Fallback se il totale riga non è salvato: quantita * prezzo
                 q = float(r.get("quantita") or 0.0)
                 p = float(r.get("prezzo") or 0.0)
                 imp = q * p
             imponibile += float(imp or 0.0)
 
-        # 5. Calcolo IVA dinamicamente
-        regime = str(fattura_dict.get("regime_iva", "") or "22").strip()
+        # 5. Gestione IVA e Reverse Charge
+        regime = str(fattura_dict.get("regime_iva", "") or "22").strip().upper()
         if regime in ["22", "22.0"]:
             iva = imponibile * 0.22
             totale = imponibile + iva
@@ -1002,7 +999,7 @@ def genera_pdf_fattura(fattura_id):
 
         cur.close()
 
-        # 6. Renderizza l'HTML per il PDF
+        # 6. Renderizza HTML per PDF
         rendered_html = render_template(
             "pdf_fattura.html",
             fattura=fattura_dict,
@@ -1013,7 +1010,7 @@ def genera_pdf_fattura(fattura_id):
             nota_iva=nota_iva
         )
 
-        # 7. Generazione fisica del PDF tramite xhtml2pdf
+        # 7. Generazione PDF
         pdf_buffer = BytesIO()
         pisa_status = pisa.CreatePDF(rendered_html, dest=pdf_buffer)
 
