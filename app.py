@@ -164,53 +164,43 @@ if DATABASE_URL:
 # 2. UTILS & HELPERS
 # ==============================================================================
 def ricalcola_totale_fattura(cur, fattura_id):
-    """
-    Ricalcola il totale della fattura SOLO se ci sono elementi dinamici collegati (righe DDT o righe fattura).
-    Se è una fattura Manuale senza righe tabellari, lascia intatto il totale inserito dall'utente.
-    """
+    # 1. Recupera il regime_iva e il tipo della fattura
     cur.execute("SELECT tipo, regime_iva FROM fatture WHERE id = %s", (fattura_id,))
     f = cur.fetchone()
     if not f:
         return
-    tipo, regime_iva_raw = f[0], f[1]
-    
-    # Decodifica l'aliquota IVA
-    aliquota = 22.0
-    if regime_iva_raw is not None:
-        regime_str = str(regime_iva_raw).strip().lower()
-        if any(term in regime_str for term in ["0", "reverse", "esente", "non imponibile"]):
-            aliquota = 0.0
-        else:
-            try:
-                import re
-                numeri = re.findall(r"\d+\.?\d*", regime_str)
-                if numeri:
-                    aliquota = float(numeri[0])
-            except:
-                aliquota = 22.0
 
-    if tipo == "FORNITURA":
+    regime_str = str(f["regime_iva"] or "22").strip().lower()
+    
+    # Verifica se è Reverse Charge o Esente IVA (Aliquota 0)
+    is_rc_or_zero = any(term in regime_str for term in ["0", "reverse", "esente", "non imponibile", "rc"])
+
+    # 2. Somma l'imponibile delle righe
+    if f["tipo"] == "FORNITURA":
         cur.execute("""
-            SELECT SUM(rd.quantita * rd.prezzo) 
-            FROM righe_ddt rd
-            JOIN ddt d ON rd.ddt_id = d.id
+            SELECT COALESCE(SUM(rd.quantita * rd.prezzo), 0)
+            FROM ddt d
+            JOIN righe_ddt rd ON d.id = rd.ddt_id
             WHERE d.fattura_id = %s
         """, (fattura_id,))
-        res = cur.fetchone()[0]
-        if res is not None:
-            imponibile = float(res)
-            totale_ivato = imponibile * (1 + (aliquota / 100.0))
-            cur.execute("UPDATE fatture SET totale = %s WHERE id = %s", (totale_ivato, fattura_id))
-            
-    else: # tipo MANUALE
-        cur.execute("SELECT SUM(quantita * prezzo_unitario) FROM righe_fattura WHERE fattura_id = %s", (fattura_id,))
-        res = cur.fetchone()[0]
+    else:
+        cur.execute("""
+            SELECT COALESCE(SUM(quantita * prezzo_unitario), 0)
+            FROM righe_fattura
+            WHERE fattura_id = %s
+        """, (fattura_id,))
         
-        if res is not None:
-            imponibile = float(res)
-            totale_ivato = imponibile * (1 + (aliquota / 100.0))
-            cur.execute("UPDATE fatture SET totale = %s WHERE id = %s", (totale_ivato, fattura_id))
+    imponibile = float(cur.fetchone()[0] or 0.0)
 
+    # 3. Calcola il totale CORRETTO
+    if is_rc_or_zero:
+        totale_finale = imponibile  # NESSUNA IVA
+    else:
+        totale_finale = imponibile * 1.22  # IVA 22%
+
+    # 4. Aggiorna il totale reale nel database
+    cur.execute("UPDATE fatture SET totale = %s WHERE id = %s", (totale_finale, fattura_id))
+    
 # ==============================================================================
 # 3. ROTTE FATTURE (VISTA, CREAZIONE, DETTAGLIO, MODIFICA)
 # ==============================================================================
