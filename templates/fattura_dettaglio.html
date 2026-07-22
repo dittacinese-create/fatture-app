@@ -117,8 +117,9 @@
             </div>
             {% endif %}
         </div>
+        {% set totale_reale = totale if (fattura.regime_iva|string in ["22", "22.0"]) else imponibile %}
         <div style="font-size: 13px; color: #4b5563; margin-top: 8px; font-weight: 500;">
-            Residuo da riscuotere: <span style="color: #b91c1c; font-weight: 600;">€ {{ "%.2f"|format(totale - (fattura.totale_pagato or 0.0)) }}</span>
+            Residuo da riscuotere: <span style="color: #b91c1c; font-weight: 600;">€ {{ "%.2f"|format(totale_reale - (fattura.totale_pagato or 0.0)) }}</span>
         </div>
     </div>
 </div>
