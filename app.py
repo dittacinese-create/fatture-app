@@ -931,49 +931,110 @@ def delete_riga_ddt(riga_id, fattura_id):
 
 @app.route("/pdf/<int:fattura_id>")
 def genera_pdf_fattura(fattura_id):
+    import psycopg2.extras
+    from io import BytesIO
+    from xhtml2pdf import pisa  # Assicurati che xhtml2pdf sia importato
+
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
 
-    # Recupera fattura e dati cliente
-    cur.execute("""
-        SELECT f.*, c.nome AS cliente_nome, c.indirizzo, c.partita_iva, c.codice_fiscale, c.codice_sdi, c.pec
-        FROM fatture f
-        LEFT JOIN clienti c ON f.cliente_id = c.id
-        WHERE f.id = %s
-    """, (fattura_id,))
-    fattura = cur.fetchone()
+    try:
+        # 1. Recupera la fattura e i dati del cliente
+        cur.execute("""
+            SELECT f.*, 
+                   c.nome AS cliente_nome, 
+                   c.indirizzo, 
+                   c.partita_iva, 
+                   c.codice_fiscale, 
+                   c.codice_sdi, 
+                   c.pec
+            FROM fatture f
+            LEFT JOIN clienti c ON f.cliente_id = c.id
+            WHERE f.id = %s
+        """, (fattura_id,))
+        fattura = cur.fetchone()
 
-    if not fattura:
+        if not fattura:
+            cur.close()
+            return "Fattura non trovata", 404
+
+        # Convertiamo la riga in un dizionario standard per sicurezza
+        fattura_dict = dict(fattura)
+
+        # 2. Recupera le righe della fattura (manuale)
+        cur.execute("SELECT * FROM righe_fatture WHERE fattura_id = %s ORDER BY id ASC", (fattura_id,))
+        righe_manuali = [dict(r) for r in cur.fetchall()]
+
+        # 3. Recupera le righe dei DDT (se fornitura)
+        cur.execute("""
+            SELECT rd.* 
+            FROM righe_ddt rd
+            JOIN ddt d ON rd.ddt_id = d.id
+            WHERE d.fattura_id = %s
+            ORDER BY d.id ASC, rd.id ASC
+        """, (fattura_id,))
+        righe_ddt = [dict(r) for r in cur.fetchall()]
+
+        # Uniamo le righe per il calcolo totale
+        tutte_le_righe = righe_manuali + righe_ddt
+
+        # 4. Calcolo imponibile robusto
+        imponibile = 0.0
+        for r in tutte_le_righe:
+            imp = r.get("totale")
+            if imp is None:
+                # Fallback se il totale riga non è salvato: quantita * prezzo
+                q = float(r.get("quantita") or 0.0)
+                p = float(r.get("prezzo") or 0.0)
+                imp = q * p
+            imponibile += float(imp or 0.0)
+
+        # 5. Calcolo IVA dinamicamente
+        regime = str(fattura_dict.get("regime_iva", "") or "22").strip()
+        if regime in ["22", "22.0"]:
+            iva = imponibile * 0.22
+            totale = imponibile + iva
+            nota_iva = ""
+        else:
+            iva = 0.0
+            totale = imponibile
+            nota_iva = "Operazione in Reverse Charge / Esente IVA"
+
         cur.close()
-        return "Fattura non trovata", 404
 
-    # Recupera tutte le righe (manuali o DDT)
-    cur.execute("SELECT * FROM righe_fatture WHERE fattura_id = %s", (fattura_id,))
-    righe = cur.fetchall()
+        # 6. Renderizza l'HTML per il PDF
+        rendered_html = render_template(
+            "pdf_fattura.html",
+            fattura=fattura_dict,
+            righe=tutte_le_righe,
+            imponibile=imponibile,
+            iva=iva,
+            totale=totale,
+            nota_iva=nota_iva
+        )
 
-    # Calcola l'imponibile reale sommando direttamente le righe
-    imponibile = sum(float(r["totale"] or 0.0) for r in righe)
+        # 7. Generazione fisica del PDF tramite xhtml2pdf
+        pdf_buffer = BytesIO()
+        pisa_status = pisa.CreatePDF(rendered_html, dest=pdf_buffer)
 
-    # Gestione del regime IVA per il PDF
-    regime = str(fattura.get("regime_iva", "22")).strip()
-    if regime in ["22", "22.0"]:
-        iva = imponibile * 0.22
-        totale = imponibile + iva
-    else:
-        iva = 0.0
-        totale = imponibile
+        if pisa_status.err:
+            return f"Errore durante la generazione del PDF: {pisa_status.err}", 500
 
-    cur.close()
+        pdf_buffer.seek(0)
+        num_fattura = fattura_dict.get("numero", "ND")
+        filename = f"Fattura_{num_fattura}.pdf"
 
-    return render_template(
-        "pdf_fattura.html",
-        fattura=fattura,
-        righe=righe,
-        imponibile=imponibile,
-        iva=iva,
-        totale=totale
-    )
+        return Response(
+            pdf_buffer.read(),
+            mimetype="application/pdf",
+            headers={"Content-Disposition": f"inline; filename={filename}"}
+        )
 
+    except Exception as e:
+        if 'cur' in locals() and cur:
+            cur.close()
+        print(f"CRASH GENERAZIONE PDF: {e}")
+        return f"Errore interno del server: {str(e)}", 500
 
 # ==============================================================================
 # 7. SEZIONE CLIENTI
