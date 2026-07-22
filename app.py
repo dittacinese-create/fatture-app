@@ -932,7 +932,6 @@ def delete_riga_ddt(riga_id, fattura_id):
         return jsonify({"success": True})
     return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
 
-
 # ==============================================================================
 # 6. ESPORTAZIONE PDF (GENERAZIONE E DOWNLOAD DIRETTO)
 # ==============================================================================
@@ -943,6 +942,7 @@ def genera_pdf(fattura_id):
     import psycopg2.extras
     from xhtml2pdf import pisa
     from flask import make_response, render_template
+    from datetime import datetime
 
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
@@ -1013,11 +1013,12 @@ def genera_pdf(fattura_id):
             d = dict(r)
             qta = float(d.get("quantita") if d.get("quantita") is not None else 0.0)
             prz = float(d.get("prezzo") if d.get("prezzo") is not None else 0.0)
+            tot_riga = qta * prz
             
-            # Forziamo la sovrascrittura con stringhe formattate a 2 decimali
             d["quantita"] = f"{qta:.2f}"
             d["prezzo"] = f"{prz:.2f}"
-            d["totale"] = f"{(qta * prz):.2f}"
+            d["totale"] = f"{tot_riga:.2f}"
+            d["totale_float"] = tot_riga
             righe_ddt.append(d)
             righe.append(d)
     else:
@@ -1028,26 +1029,45 @@ def genera_pdf(fattura_id):
             p_raw = d.get("prezzo_unitario") if d.get("prezzo_unitario") is not None else d.get("prezzo")
             qta = float(d.get("quantita") if d.get("quantita") is not None else 0.0)
             prz = float(p_raw if p_raw is not None else 0.0)
+            tot_riga = qta * prz
             
-            # Forziamo la sovrascrittura con stringhe formattate a 2 decimali
             d["quantita"] = f"{qta:.2f}"
             d["prezzo"] = f"{prz:.2f}"
-            d["totale"] = f"{(qta * prz):.2f}"
+            d["totale"] = f"{tot_riga:.2f}"
+            d["totale_float"] = tot_riga
             righe.append(d)
             
     cur.close()
 
-    # 6. Calcoli economici stabili e pre-formattati
-    valore_totale = float(f.get("totale", 0.0) or 0.0)
-    try:
-        aliquota = float(f.get("regime_iva", 22.0) or 22.0)
-    except:
-        aliquota = 22.0
-        
-    valore_imponibile = valore_totale / (1 + (aliquota / 100.0))
-    valore_iva = valore_totale - valore_imponibile
+    # --- 6. GESTIONE ALIQUOTA E CALCOLO DEI TOTALI CORRETTI ---
+    regime_str = str(f.get("regime_iva") or "22").strip().lower()
+    
+    # Rilevamento automatico dell'aliquota (Reverse Charge, Esente o Aliquota 0)
+    if any(term in regime_str for term in ["0", "reverse", "esente", "non imponibile", "rc"]):
+        aliquota = 0.0
+    else:
+        try:
+            import re
+            numeri = re.findall(r"\d+\.?\d*", regime_str)
+            aliquota = float(numeri[0]) if numeri else 22.0
+        except:
+            aliquota = 22.0
 
-    # Sostituiamo i valori nel dizionario di fattura per evitare crash nei campi principali
+    # Calcolo imponibile sommando l'importo REALE di ogni riga
+    if f.get("tipo") == "FORNITURA":
+        valore_imponibile = sum(r["totale_float"] for r in righe_ddt)
+    else:
+        valore_imponibile = sum(r["totale_float"] for r in righe)
+
+    # Calcolo IVA e Totale
+    if aliquota == 0.0:
+        valore_iva = 0.0
+        valore_totale = valore_imponibile
+    else:
+        valore_iva = valore_imponibile * (aliquota / 100.0)
+        valore_totale = valore_imponibile + valore_iva
+
+    # Sostituiamo i valori nel dizionario di fattura per il PDF
     f["totale_str"] = f"{valore_totale:.2f}"
     f["imponibile_str"] = f"{valore_imponibile:.2f}"
     f["iva_str"] = f"{valore_iva:.2f}"
@@ -1055,11 +1075,9 @@ def genera_pdf(fattura_id):
     # FIX DATA: Converte la data da AAAA-MM-GG a GG/MM/AAAA se presente
     if f.get("data"):
         try:
-            # Se è già un oggetto datetime/date
             if hasattr(f["data"], "strftime"):
                 f["data_formattata"] = f["data"].strftime("%d/%m/%Y")
             else:
-                # Se è una stringa (es. "2026-07-13")
                 dt = datetime.strptime(str(f["data"]), "%Y-%m-%d")
                 f["data_formattata"] = dt.strftime("%d/%m/%Y")
         except:
