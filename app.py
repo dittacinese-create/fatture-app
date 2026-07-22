@@ -165,36 +165,41 @@ if DATABASE_URL:
 # 2. UTILS & HELPERS
 # ==============================================================================
 
-def ricalcola_totale_fattura(cur, fattura_id):
-    """Calcola la somma imponibile basandosi sul tipo di fattura e aggiorna il totale ivato."""
-    cur.execute("SELECT tipo, regime_iva FROM fatture WHERE id = %s", (fattura_id,))
+def calcola_totale_fattura(fattura_id):
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    
+    # 1. Recupera il regime IVA della fattura
+    cur.execute("SELECT regime_iva FROM fatture WHERE id = %s", (fattura_id,))
     f = cur.fetchone()
-    if not f:
-        return
-    tipo, regime_iva_raw = f[0], f[1] or "22"
-    
-    try:
-        aliquota = float(regime_iva_raw)
-    except:
-        aliquota = 22.0
+    regime_iva = str(f["regime_iva"]).strip() if f and f["regime_iva"] else "22"
 
-    imponibile_totale = 0.0
-    
-    if tipo == "FORNITURA":
-        cur.execute("""
-            SELECT SUM(rd.quantita * rd.prezzo) 
-            FROM righe_ddt rd
-            JOIN ddt d ON rd.ddt_id = d.id
-            WHERE d.fattura_id = %s
-        """, (fattura_id,))
-        imponibile_totale = cur.fetchone()[0] or 0.0
+    # 2. Somma i totali delle righe
+    cur.execute("SELECT COALESCE(SUM(totale), 0.0) AS imponibile FROM righe_fatture WHERE fattura_id = %s", (fattura_id,))
+    res_righe = cur.fetchone()
+    imponibile_righe = float(res_righe["imponibile"] or 0.0)
+
+    cur.execute("SELECT COALESCE(SUM(totale), 0.0) AS imponibile FROM righe_ddt WHERE ddt_id IN (SELECT id FROM ddt WHERE fattura_id = %s)", (fattura_id,))
+    res_ddt = cur.fetchone()
+    imponibile_ddt = float(res_ddt["imponibile"] or 0.0)
+
+    imponibile_totale = imponibile_righe + imponibile_ddt
+
+    # 3. Calcolo dell'IVA e del Totale effettivo
+    if regime_iva in ["22", "22.0"]:
+        iva = imponibile_totale * 0.22
+        totale_finale = imponibile_totale + iva
     else:
-        cur.execute("SELECT SUM(quantita * prezzo_unitario) FROM righe_fattura WHERE fattura_id = %s", (fattura_id,))
-        imponibile_totale = cur.fetchone()[0] or 0.0
+        # Se Reverse Charge (RC%), Esente, ecc.
+        iva = 0.0
+        totale_finale = imponibile_totale
 
-    totale_ivato = imponibile_totale * (1 + (aliquota / 100.0))
-    cur.execute("UPDATE fatture SET totale = %s WHERE id = %s", (totale_ivato, fattura_id))
+    # 4. Aggiorna la colonna 'totale' nel Database con il valore corretto
+    cur.execute("UPDATE fatture SET totale = %s WHERE id = %s", (totale_finale, fattura_id))
+    db.commit()
+    cur.close()
 
+    return imponibile_totale, iva, totale_finale
 
 # ==============================================================================
 # 3. ROTTE FATTURE (VISTA, CREAZIONE, DETTAGLIO, MODIFICA)
@@ -925,169 +930,49 @@ def delete_riga_ddt(riga_id, fattura_id):
 # ==============================================================================
 
 @app.route("/pdf/<int:fattura_id>")
-def genera_pdf(fattura_id):
-    import io
-    import psycopg2.extras
-    from xhtml2pdf import pisa
-    from flask import make_response, render_template
-    from datetime import datetime
-
+def genera_pdf_fattura(fattura_id):
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    
-    # 1. Recupera la fattura
-    cur.execute("SELECT * FROM fatture WHERE id = %s", (fattura_id,))
-    f_raw = cur.fetchone()
-    
-    if not f_raw:
+
+    # Recupera fattura e dati cliente
+    cur.execute("""
+        SELECT f.*, c.nome AS cliente_nome, c.indirizzo, c.partita_iva, c.codice_fiscale, c.codice_sdi, c.pec
+        FROM fatture f
+        LEFT JOIN clienti c ON f.cliente_id = c.id
+        WHERE f.id = %s
+    """, (fattura_id,))
+    fattura = cur.fetchone()
+
+    if not fattura:
         cur.close()
-        return "Errore: Fattura non trovata.", 404
-        
-    f = dict(f_raw)
-        
-    # 2. Recupera i dati del cliente (Cessionario)
-    cliente = None
-    if f.get("cliente_id"):
-        cur.execute("SELECT * FROM clienti WHERE id = %s", (f["cliente_id"],))
-        c_raw = cur.fetchone()
-        if c_raw:
-            cliente = dict(c_raw)
-        
-    # 3. Recupera i dati dell'azienda (Cedente)
-    cur.execute("SELECT * FROM azienda LIMIT 1")
-    az_raw = cur.fetchone()
-    
-    if az_raw:
-        azienda = dict(az_raw)
+        return "Fattura non trovata", 404
+
+    # Recupera tutte le righe (manuali o DDT)
+    cur.execute("SELECT * FROM righe_fatture WHERE fattura_id = %s", (fattura_id,))
+    righe = cur.fetchall()
+
+    # Calcola l'imponibile reale sommando direttamente le righe
+    imponibile = sum(float(r["totale"] or 0.0) for r in righe)
+
+    # Gestione del regime IVA per il PDF
+    regime = str(fattura.get("regime_iva", "22")).strip()
+    if regime in ["22", "22.0"]:
+        iva = imponibile * 0.22
+        totale = imponibile + iva
     else:
-        azienda = {
-            "nome": "La Tua Ditta S.r.l.",
-            "indirizzo": "Via Roma 123, Torino (TO)",
-            "partita_iva": "IT12345678901",
-            "codice_fiscale": "12345678901",
-            "telefono": "+39 011 123456",
-            "email": "info@lazuaditta.it"
-        }
-        
-    # 4. Associa i dettagli della banca selezionata
-    banca_selezionata = None
-    try:
-        if f.get("banca_id") and f["banca_id"] in BANCHE:
-            banca_selezionata = BANCHE[f["banca_id"]]
-    except NameError:
-        try:
-            from config import BANCHE
-            if f.get("banca_id") and f["banca_id"] in BANCHE:
-                banca_selezionata = BANCHE[f["banca_id"]]
-        except Exception:
-            banca_selezionata = None
-        
-    # 5. Recupera ddt e righe in base al tipo
-    ddt_list = []
-    righe_ddt = []
-    righe = []
-    
-    if f.get("tipo") == "FORNITURA":
-        cur.execute("SELECT * FROM ddt WHERE fattura_id = %s ORDER BY data ASC, id ASC", (fattura_id,))
-        ddt_list = [dict(r) for r in cur.fetchall()]
-        
-        cur.execute("""
-            SELECT rd.* FROM righe_ddt rd
-            JOIN ddt d ON rd.ddt_id = d.id
-            WHERE d.fattura_id = %s ORDER BY d.data ASC, rd.id ASC
-        """, (fattura_id,))
-        righe_raw = cur.fetchall()
-        for r in righe_raw:
-            d = dict(r)
-            qta = float(d.get("quantita") if d.get("quantita") is not None else 0.0)
-            prz = float(d.get("prezzo") if d.get("prezzo") is not None else 0.0)
-            
-            d["quantita"] = f"{qta:.2f}"
-            d["prezzo"] = f"{prz:.2f}"
-            d["totale"] = f"{(qta * prz):.2f}"
-            righe_ddt.append(d)
-            righe.append(d)
-    else:
-        cur.execute("SELECT * FROM righe_fattura WHERE fattura_id = %s ORDER BY id ASC", (fattura_id,))
-        righe_raw = cur.fetchall()
-        for r in righe_raw:
-            d = dict(r)
-            p_raw = d.get("prezzo_unitario") if d.get("prezzo_unitario") is not None else d.get("prezzo")
-            qta = float(d.get("quantita") if d.get("quantita") is not None else 0.0)
-            prz = float(p_raw if p_raw is not None else 0.0)
-            
-            d["quantita"] = f"{qta:.2f}"
-            d["prezzo"] = f"{prz:.2f}"
-            d["totale"] = f"{(qta * prz):.2f}"
-            righe.append(d)
-            
+        iva = 0.0
+        totale = imponibile
+
     cur.close()
 
-    # 6. CALCOLI ECONOMICI CORRETTI
-    valore_imponibile = float(f.get("totale", 0.0) or 0.0)
-    regime_str = str(f.get("regime_iva", "")).strip()
-    
-    if regime_str in ["22", "22.0"]:
-        valore_iva = valore_imponibile * 0.22
-        valore_totale = valore_imponibile + valore_iva
-    else:
-        valore_iva = 0.0
-        valore_totale = valore_imponibile
-
-    f["totale_str"] = f"{valore_totale:.2f}"
-    f["imponibile_str"] = f"{valore_imponibile:.2f}"
-    f["iva_str"] = f"{valore_iva:.2f}"
-
-    # Formattazione data
-    if f.get("data"):
-        try:
-            if hasattr(f["data"], "strftime"):
-                f["data_formattata"] = f["data"].strftime("%d/%m/%Y")
-            else:
-                dt = datetime.strptime(str(f["data"]), "%Y-%m-%d")
-                f["data_formattata"] = dt.strftime("%d/%m/%Y")
-        except Exception:
-            f["data_formattata"] = f["data"]
-    else:
-        f["data_formattata"] = ""
-
-    # 7. Renderizza l'HTML del template PDF
-    html = render_template(
-        "pdf_fattura.html", 
-        fattura=f,
-        cliente=cliente,
-        azienda=azienda,
-        banca_selezionata=banca_selezionata,
-        ddt_list=ddt_list,
-        righe_ddt=righe_ddt,
+    return render_template(
+        "pdf_fattura.html",
+        fattura=fattura,
         righe=righe,
-        imponibile=f"{valore_imponibile:.2f}",
-        iva=f"{valore_iva:.2f}",
-        totale=f"{valore_totale:.2f}",
-        autoprint=False
+        imponibile=imponibile,
+        iva=iva,
+        totale=totale
     )
-
-    # 8. Genera il PDF in memoria
-    pdf_buffer = io.BytesIO()
-    try:
-        pisa.CreatePDF(io.BytesIO(html.encode("utf-8")), dest=pdf_buffer)
-    except Exception as pdf_error:
-        return f"Errore interno del motore PDF: {pdf_error}", 500
-        
-    # 9. Prepara la risposta di download
-    if cliente and "nome" in cliente:
-        nome_cliente_pulito = str(cliente["nome"]).replace(" ", "").strip()
-    else:
-        nome_cliente_pulito = "generico"
-        
-    numero_fattura_pulito = str(f.get("numero", "")).replace("/", "-").strip() or str(fattura_id)
-    filename = f"Fattura_{numero_fattura_pulito}_{nome_cliente_pulito}.pdf"
-    
-    response = make_response(pdf_buffer.getvalue())
-    response.headers['Content-Type'] = 'application/pdf'
-    response.headers['Content-Disposition'] = f'attachment; filename={filename}'
-    
-    return response
 
 
 # ==============================================================================
