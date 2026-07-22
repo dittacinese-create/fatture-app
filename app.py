@@ -200,7 +200,7 @@ def ricalcola_totale_fattura(cur, fattura_id):
 
     # 4. Aggiorna il totale reale nel database
     cur.execute("UPDATE fatture SET totale = %s WHERE id = %s", (totale_finale, fattura_id))
-    
+
 # ==============================================================================
 # 3. ROTTE FATTURE (VISTA, CREAZIONE, DETTAGLIO, MODIFICA)
 # ==============================================================================
@@ -327,7 +327,6 @@ def nueva_fattura():
     data_oggi = datetime.now().strftime("%Y-%m-%d")
     return render_template("nuova_fattura.html", clienti=clienti, banche=elenco_banche, data_oggi=data_oggi)
 
-
 @app.route("/fattura/<int:fattura_id>")
 def vedi_fattura(fattura_id):
     db = get_db()
@@ -371,7 +370,7 @@ def vedi_fattura(fattura_id):
         for r in righe_raw:
             d = dict(r)
             d["prezzo"] = d.get("prezzo_unitario", 0.0)
-            d["totale"] = d["quantita"] * d["prezzo"]
+            d["totale"] = float(d["quantita"] or 0.0) * float(d["prezzo"] or 0.0)
             righe.append(d)
             
     cur.close()
@@ -380,7 +379,7 @@ def vedi_fattura(fattura_id):
     regime_str = str(fattura_dict.get("regime_iva") or "22").strip().lower()
     
     # Determina l'aliquota per la visualizzazione
-    if any(term in regime_str for term in ["0", "reverse", "esente", "non imponibile"]):
+    if any(term in regime_str for term in ["0", "reverse", "esente", "non imponibile", "rc"]):
         aliquota = 0.0
     else:
         try:
@@ -389,19 +388,25 @@ def vedi_fattura(fattura_id):
             aliquota = float(numeri[0]) if numeri else 22.0
         except:
             aliquota = 22.0
-        
-    valore_totale = float(fattura_dict.get("totale", 0.0) or 0.0)
-    
-    # Calcolo Imponibile/IVA per la vista grafica
-    if aliquota == 0.0:
-        valore_imponibile = valore_totale
-        valore_iva = 0.0
+
+    # --- CALCOLO CORRETTO DEI TOTALI DAI DATI DELLE RIGHE ---
+    if f["tipo"] == "FORNITURA":
+        valore_imponibile = sum(float(r["totale"] or 0.0) for r in righe_ddt)
     else:
-        valore_imponibile = valore_totale / (1 + (aliquota / 100.0))
-        valore_iva = valore_totale - valore_imponibile
-    
+        valore_imponibile = sum(float(r["totale"] or 0.0) for r in righe)
+
+    if aliquota == 0.0:
+        valore_iva = 0.0
+        valore_totale = valore_imponibile
+    else:
+        valore_iva = valore_imponibile * (aliquota / 100.0)
+        valore_totale = valore_imponibile + valore_iva
+
+    # Aggiorna il valore per il template
+    fattura_dict["totale"] = valore_totale
+
     if "totale_pagato" not in fattura_dict or fattura_dict["totale_pagato"] is None:
-        fattura_dict["totale_pagato"] = valore_totale if fattura_dict.get("stato_pagamento") == "Pagata" else 0.0
+        fattura_dict["totale_pagato"] = valore_totale if str(fattura_dict.get("stato_pagamento")).lower() in ["pagata", "pagato"] else 0.0
 
     return render_template(
         "fattura_dettaglio.html", 
@@ -415,7 +420,6 @@ def vedi_fattura(fattura_id):
         imponibile=valore_imponibile,
         iva=valore_iva
     )
-
 
 @app.route("/aggiorna_testata/<int:fattura_id>", methods=["POST"])
 @app.route("/aggiorna_fattura_ajax/<int:fattura_id>", methods=["POST"])
