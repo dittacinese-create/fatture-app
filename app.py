@@ -164,12 +164,13 @@ if DATABASE_URL:
 # 2. UTILS & HELPERS
 # ==============================================================================
 def ricalcola_totale_fattura(cur, fattura_id):
-    # 1. Recupera il regime_iva e il tipo della fattura
-    cur.execute("SELECT tipo, regime_iva FROM fatture WHERE id = %s", (fattura_id,))
+    # 1. Recupera il regime_iva, il tipo e il TOTALE ATTUALE della fattura
+    cur.execute("SELECT tipo, regime_iva, totale FROM fatture WHERE id = %s", (fattura_id,))
     f = cur.fetchone()
     if not f:
         return
 
+    totale_attuale = float(f["totale"] or 0.0)
     regime_str = str(f["regime_iva"] or "22").strip().lower()
     
     # Verifica se è Reverse Charge o Esente IVA (Aliquota 0)
@@ -198,8 +199,15 @@ def ricalcola_totale_fattura(cur, fattura_id):
     else:
         totale_finale = imponibile * 1.22  # IVA 22%
 
-    # 4. Aggiorna il totale reale nel database
-    cur.execute("UPDATE fatture SET totale = %s WHERE id = %s", (totale_finale, fattura_id))
+    # 4. PROTEZIONE ANTI-AZZERAMENTO:
+    # Aggiorna il DB solo se ha trovato effettivamente dell'imponibile nelle righe (> 0).
+    # Se imponibile == 0 ma nel DB c'era già un totale (es. inserito a mano o da script),
+    # NON sovrascrive il totale con 0.00!
+    if totale_finale > 0:
+        cur.execute("UPDATE fatture SET totale = %s WHERE id = %s", (totale_finale, fattura_id))
+    elif totale_attuale > 0 and totale_finale == 0:
+        # Mantiene il totale attuale per evitare azzeramenti indesiderati
+        pass
 
 # ==============================================================================
 # 3. ROTTE FATTURE (VISTA, CREAZIONE, DETTAGLIO, MODIFICA)
@@ -427,7 +435,7 @@ def aggiorna_fattura_ajax(fattura_id):
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     
-    cur.execute("SELECT stato, tipo, regime_iva FROM fatture WHERE id = %s", (fattura_id,))
+    cur.execute("SELECT stato, tipo, regime_iva, totale FROM fatture WHERE id = %s", (fattura_id,))
     fattura_attuale = cur.fetchone()
     if not fattura_attuale:
         cur.close()
@@ -475,10 +483,10 @@ def aggiorna_fattura_ajax(fattura_id):
     if regime_iva is None:
         regime_iva = fattura_attuale["regime_iva"]
 
-    if stato_pagamento == "Pagata":
+    if stato_pagamento in ["Pagata", "Pagato"]:
         cur.execute("SELECT totale FROM fatture WHERE id = %s", (fattura_id,))
         f_tot = cur.fetchone()
-        if f_tot:
+        if f_tot and f_tot[0]:
             totale_pagato = f_tot[0]
     elif not is_json and totale_pagato is not None:
         try:
@@ -486,26 +494,47 @@ def aggiorna_fattura_ajax(fattura_id):
         except:
             totale_pagato = 0.0
 
+    # Gestione sicura del totale: evita di inserire None o sovrascrivere valori esistenti con vuoti
+    if totale_manuale is not None and str(totale_manuale).strip() != "":
+        try:
+            totale_manuale = float(totale_manuale)
+        except ValueError:
+            totale_manuale = None
+    else:
+        totale_manuale = None
+
     cur.execute("""
         UPDATE fatture 
-        SET numero=COALESCE(%s, numero), data=COALESCE(%s, data), data_scadenza=COALESCE(%s, data_scadenza),
-            data_pagamento=COALESCE(%s, data_pagamento), stato_pagamento=COALESCE(%s, stato_pagamento), 
-            stato=COALESCE(%s, stato), banca_id=COALESCE(%s, banca_id), regime_iva=COALESCE(%s, regime_iva), 
-            note=%s, totale_pagato=COALESCE(%s, totale_pagato),
+        SET numero=COALESCE(%s, numero), 
+            data=COALESCE(%s, data), 
+            data_scadenza=COALESCE(%s, data_scadenza),
+            data_pagamento=COALESCE(%s, data_pagamento), 
+            stato_pagamento=COALESCE(%s, stato_pagamento), 
+            stato=COALESCE(%s, stato), 
+            banca_id=COALESCE(%s, banca_id), 
+            regime_iva=COALESCE(%s, regime_iva), 
+            note=%s, 
+            totale_pagato=COALESCE(%s, totale_pagato),
             totale=COALESCE(%s, totale)
         WHERE id=%s
     """, (numero, data_doc, data_scadenza, data_pagamento, stato_pagamento, stato, banca_id, regime_iva, note, totale_pagato, totale_manuale, fattura_id))
         
     db.commit()
-    ricalcola_totale_fattura(cur, fattura_id)
-    db.commit()
+
+    # RICALCOLO PROTEGGI-TOTALE: ricalcola SOLO se la funzione esiste ed è appropriato
+    try:
+        if 'ricalcola_totale_fattura' in globals():
+            ricalcola_totale_fattura(cur, fattura_id)
+            db.commit()
+    except Exception as e:
+        print(f"Avviso ricalcolo totale: {e}")
+
     cur.close()
     
     if is_json:
         return jsonify({"success": True})
     flash("Fattura salvata con successo.", "success")
     return redirect(url_for("vedi_fattura", fattura_id=fattura_id))
-
 
 @app.route("/chiudi_fattura/<int:fattura_id>")
 def chiudi_fattura(fattura_id):
