@@ -447,37 +447,36 @@ async function salvaFatturaUnificato() {
     btn.disabled = true;
     btn.textContent = "Salvataggio...";
 
-    const noteVal = document.getElementById("note").value;
-    const statoPagamentoVal = document.getElementById("stato_pagamento").value;
+    const noteVal = document.getElementById("note") ? document.getElementById("note").value : "";
+    const statoPagamentoVal = document.getElementById("stato_pagamento") ? document.getElementById("stato_pagamento").value : "";
     
-    // Log di controllo in console (F12 nel browser)
+    // Legge il totale pagato senza forzarlo a 0.0 se è nullo o vuoto
+    const elTotalePagato = document.getElementById("totale_pagato");
+    let totalePagatoVal = null;
+    if (elTotalePagato && elTotalePagato.value !== "") {
+        totalePagatoVal = parseFloat(elTotalePagato.value);
+    }
+
     console.log("Stato selezionato:", statoPagamentoVal);
 
     try {
-        const resTestata = await fetch("/aggiorna_testata/{{ fattura.id }}", {
+        // UNICA CHIAMATA FETCH: Invia tutti i dati insieme evitando conflitti
+        const res = await fetch("/aggiorna_fattura_ajax/{{ fattura.id }}", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                numero: document.getElementById("edit_numero").value,
-                data: document.getElementById("edit_data").value,
-                note: noteVal
-            })
-        });
-
-        const resPagamento = await fetch("/aggiorna_fattura_ajax/{{ fattura.id }}", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
+                numero: document.getElementById("edit_numero") ? document.getElementById("edit_numero").value : null,
+                data: document.getElementById("edit_data") ? document.getElementById("edit_data").value : null,
                 stato_pagamento: statoPagamentoVal,
-                totale_pagato: parseFloat(document.getElementById("totale_pagato").value) || 0.0,
-                data_scadenza: document.getElementById("data_scadenza").value || null,
-                data_pagamento: document.getElementById("data_pagamento").value || null,
+                totale_pagato: totalePagatoVal,
+                data_scadenza: document.getElementById("data_scadenza") ? document.getElementById("data_scadenza").value : null,
+                data_pagamento: document.getElementById("data_pagamento") ? document.getElementById("data_pagamento").value : null,
                 note: noteVal
             })
         });
 
-        if (resTestata.ok && resPagamento.ok) {
-            s.style.display = "inline";
+        if (res.ok) {
+            if (s) s.style.display = "inline";
 
             if (statoPagamentoVal.trim().toUpperCase() === "CHIUSA") {
                 console.log("Tentativo di download backup generale");
@@ -488,9 +487,11 @@ async function salvaFatturaUnificato() {
                 document.body.removeChild(link);
             }
 
-            setTimeout(function() { window.location.reload(); }, 1000);
+            // Ricarica la pagina per mostrare i dati aggiornati
+            setTimeout(function() { window.location.reload(); }, 600);
         } else {
-            alert("Si è verificato un errore durante il salvataggio.");
+            const dataErr = await res.json().catch(() => ({}));
+            alert(dataErr.error || "Si è verificato un errore durante il salvataggio.");
             btn.disabled = false;
             btn.textContent = "Salva";
         }
