@@ -1239,12 +1239,10 @@ def delete_prodotto(prodotto_id):
 
 # ==============================================================================
 # 9. DASHBOARD & STATISTICHE
-# =============================================================================
+# ==============================================================================
 
 @app.route("/dashboard")
 def dashboard():
-    # Spostiamo l'importazione di psycopg2.extras per sicurezza, 
-    # ma assumendo che sia già disponibile, lo manteniamo sicuro e accessibile
     import psycopg2.extras
 
     # 1. Recupera i parametri dei filtri dalla richiesta GET
@@ -1258,11 +1256,9 @@ def dashboard():
         filtro_inizio = filtro_fine = filtro_cliente = filtro_tipo = filtro_stato = None
 
     db = get_db()
-    
-    # CORREZIONE CRUCIALE: Inizializziamo il cursore solo dopo esserci assicurati dell'importazione
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
 
-    # 2. Query modificata per supportare sia f.cliente che f.cliente_nome nel template HTML
+    # 2. Query sincronizzata con la tabella 'fatture'
     query = """
         SELECT f.id,
                f.numero AS numero_fattura, 
@@ -1293,7 +1289,7 @@ def dashboard():
         query += " AND f.tipo = %s"
         params.append(filtro_tipo)
     if filtro_stato:
-        query += " AND f.stato_pagamento = %s"
+        query += " AND f.stato_pagamento ILIKE %s"
         params.append(filtro_stato)
 
     query += " ORDER BY f.data DESC, f.id DESC"
@@ -1305,7 +1301,7 @@ def dashboard():
         print(f"Errore query fatture: {e}")
         fatture = []
 
-    # 3. Calcolo dei KPI dinamici basati sulla colonna corretta del database
+    # 3. Calcolo dei KPI dinamici coerenti (supporta sia 'Pagato' che 'Pagata')
     totale_generale = 0.0
     totale_pagato = 0.0
 
@@ -1313,15 +1309,15 @@ def dashboard():
         imp_tot = float(f["importo_totale"] or 0.0)
         totale_generale += imp_tot
         
-        stato = (f["stato_pagamento"] or "").lower()
-        if stato == "pagato":
+        stato = (f["stato_pagamento"] or "").strip().lower()
+        if stato in ["pagato", "pagata"]:
             totale_pagato += imp_tot
         elif stato == "parziale":
             totale_pagato += float(f["totale_pagato"] or 0.0)
 
     totale_mancante = max(0.0, totale_generale - totale_pagato)
 
-    # 4. Recupera la lista dei clienti per il menu a tendina
+    # 4. Lista dei clienti per il filtro
     try:
         cur.execute("SELECT nome FROM clienti ORDER BY nome ASC")
         clienti_lista = [r["nome"] for r in cur.fetchall()]
@@ -1330,10 +1326,7 @@ def dashboard():
 
     cur.close()
 
-    # 5. Recuperiamo la password corretta direttamente dal file config.py
-    from config import PASSWORD_ACCESSO
-    password_sblocco = PASSWORD_ACCESSO
-
+    # NOTA SICUREZZA: Rimosso 'password_sblocco' per non esporla nel codice HTML frontend
     return render_template(
         "dashboard.html",
         fatture=fatture,
@@ -1345,46 +1338,51 @@ def dashboard():
         filtro_cliente=filtro_cliente or "",
         filtro_tipo=filtro_tipo or "",
         filtro_stato=filtro_stato or "",
-        clienti_lista=clienti_lista,
-        password_sblocco=password_sblocco
+        clienti_lista=clienti_lista
     )
 
+
 # ==============================================================================
-# 10. API DI AGGIORNAMENTO STATO IN TEMPO REALE (DASHBOARD)
+# 10. API DI AGGIORNAMENTO STATO IN TEMPO REALE (DASHBOARD & FATTURE)
 # ==============================================================================
 
 @app.route("/api/aggiorna_stato", methods=["POST"])
 def api_aggiorna_stato():
     data = request.get_json() or {}
     fattura_id = data.get("id")
-    stato = data.get("stato")
+    stato = data.get("stato", "").strip()
     data_pagamento = data.get("data_pagamento", "").strip() or None
     importo_pagato = data.get("importo_pagato")
 
     if not fattura_id:
         return jsonify({"success": False, "message": "ID fattura mancante."}), 400
 
-    # Conversione sicura dell'importo pagato
-    if importo_pagato is not None and str(importo_pagato).strip() != "":
-        try:
-            importo_pagato = float(importo_pagato)
-        except ValueError:
-            importo_pagato = None
-    else:
-        importo_pagato = None
-
     db = get_db()
     cur = db.cursor()
 
     try:
-        # Forza la creazione della colonna corretta se mancante
-        try:
-            cur.execute("ALTER TABLE fatture ADD COLUMN IF NOT EXISTS totale_pagato NUMERIC(10,2) DEFAULT 0.0;")
-            db.commit()
-        except Exception:
-            db.rollback()
+        # Recupera il totale corrente della fattura per gli automatismi
+        cur.execute("SELECT totale FROM fatture WHERE id = %s", (fattura_id,))
+        row = cur.fetchone()
+        totale_fattura = float(row[0]) if row and row[0] else 0.0
 
-        # Aggiorna usando 'totale_pagato' (colonna reale del DB)
+        # Normalizzazione dell'importo pagato in base allo stato
+        stato_lower = stato.lower()
+        if stato_lower in ["pagato", "pagata"]:
+            importo_pagato = totale_fattura
+        elif stato_lower in ["non pagata", "non pagato"]:
+            importo_pagato = 0.0
+            data_pagamento = None
+        else:
+            if importo_pagato is not None and str(importo_pagato).strip() != "":
+                try:
+                    importo_pagato = float(importo_pagato)
+                except ValueError:
+                    importo_pagato = 0.0
+            else:
+                importo_pagato = 0.0
+
+        # Aggiornamento atomico nel Database
         cur.execute("""
             UPDATE fatture 
             SET stato_pagamento = %s, 
@@ -1402,8 +1400,25 @@ def api_aggiorna_stato():
     finally:
         cur.close()
 
+
 # ==============================================================================
-# 11.NOTE 
+# 11. ENDPOINT DI SICUREZZA PER VERIFICA PASSWORD
+# ==============================================================================
+
+@app.route("/api/verifica-password", methods=["POST"])
+def verifica_password():
+    data = request.get_json() or {}
+    password_inserita = data.get("password", "")
+
+    from config import PASSWORD_ACCESSO
+    
+    if password_inserita == PASSWORD_ACCESSO:
+        return jsonify({"success": True, "message": "Password corretta"}), 200
+    else:
+        return jsonify({"success": False, "message": "Password errata"}), 401
+
+# ==============================================================================
+# 12.NOTE 
 # ==============================================================================
 
 @app.route("/note")
@@ -1550,7 +1565,7 @@ def elimina_nota_api(id):
         cur.close()
 
 # ==============================================================================
-# 12. DOWNLOAD DATI CLIENTI, PRODOTTI, FATTURE
+# 13. DOWNLOAD DATI CLIENTI, PRODOTTI, FATTURE
 # ==============================================================================
 
 @app.route("/export_fattura_backup")
@@ -1665,7 +1680,7 @@ def export_prodotti_backup():
     return Response(output, mimetype="text/plain", headers={"Content-Disposition": f"attachment;filename={filename}"})
 
 # ==============================================================================
-# 13. AVVIO APPLICAZIONE
+# 14. AVVIO APPLICAZIONE
 # ==============================================================================
 
 if __name__ == "__main__":
