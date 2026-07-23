@@ -91,9 +91,9 @@
             <label style="font-size: 11px; font-weight: bold; color: #475569; text-transform: uppercase;">Stato Pagamento:</label>
             <select name="stato_pagamento" style="padding: 7px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: white;">
                 <option value="">Tutti</option>
-                <option value="Pagato" {% if filtro_stato == 'Pagato' %}selected{% endif %}>Pagato</option>
+                <option value="Pagato" {% if filtro_stato in ['Pagato', 'Pagata'] %}selected{% endif %}>Pagato</option>
                 <option value="Parziale" {% if filtro_stato == 'Parziale' %}selected{% endif %}>Parziale</option>
-                <option value="Non Pagato" {% if filtro_stato == 'Non Pagato' %}selected{% endif %}>Non Pagato</option>
+                <option value="Non Pagato" {% if filtro_stato in ['Non Pagato', 'Non Pagata', 'non pagata'] %}selected{% endif %}>Non Pagato</option>
             </select>
         </div>
 
@@ -124,9 +124,9 @@
         </thead>
         <tbody>
             {% for f in fatture %}
-            {% set stato_pag = f.stato_pagamento | lower %}
-            <!-- Applichiamo classe "riga-evidenziata" se non pagata o parziale -->
-            <tr data-id="{{ f.id }}" data-totale="{{ f.importo_totale | float }}" style="border-bottom: 1px solid #cbd5e1; {% if loop.index is odd %}background-color: #fafafa;{% endif %} {% if stato_pag != 'pagato' %}font-weight: bold; background-color: #fffbeb;{% endif %}">
+            {% set stato_raw = (f.stato_pagamento or '') | string | lower | trim %}
+            
+            <tr data-id="{{ f.id }}" data-totale="{{ f.importo_totale | float }}" style="border-bottom: 1px solid #cbd5e1; {% if loop.index is odd %}background-color: #fafafa;{% endif %} {% if stato_raw not in ['pagato', 'pagata'] %}font-weight: bold; background-color: #fffbeb;{% endif %}">
                 <td style="border: 1px solid #cbd5e1; padding: 7px 10px; text-align: center;">
                     {{ f.numero_fattura or '' }}
                 </td>
@@ -149,9 +149,9 @@
                 <!-- Colonna Stato Pagamento (Interattiva) -->
                 <td style="border: 1px solid #cbd5e1; padding: 7px 10px; text-align: center;">
                     <select class="selettore-stato" disabled onchange="gestisciCambioStato(this)" style="padding: 4px; border-radius: 4px; font-weight: bold; font-size: 11px; width: 100%; border: 1px solid #cbd5e1; cursor: not-allowed; text-align-last: center;">
-                        <option value="Pagato" {% if stato_pag == 'pagato' %}selected{% endif %} style="background: #dcfce7; color: #16a34a; font-weight: bold;">PAGATO</option>
-                        <option value="Parziale" {% if stato_pag == 'parziale' %}selected{% endif %} style="background: #fef3c7; color: #d97706; font-weight: bold;">PARZIALE</option>
-                        <option value="Non Pagato" {% if stato_pag == 'non pagato' or stato_pag == '' %}selected{% endif %} style="background: #fee2e2; color: #dc2626; font-weight: bold;">NON PAGATO</option>
+                        <option value="Non Pagato" {% if stato_raw in ['non pagato', 'non pagata', ''] %}selected{% endif %} style="background: #fee2e2; color: #dc2626; font-weight: bold;">NON PAGATO</option>
+                        <option value="Parziale" {% if stato_raw == 'parziale' %}selected{% endif %} style="background: #fef3c7; color: #d97706; font-weight: bold;">PARZIALE</option>
+                        <option value="Pagato" {% if stato_raw in ['pagato', 'pagata'] %}selected{% endif %} style="background: #dcfce7; color: #16a34a; font-weight: bold;">PAGATO</option>
                     </select>
                 </td>
 
@@ -185,7 +185,6 @@
 let zoomAttuale = 1.0;
 let tabellaSbloccata = false;
 
-// Mostra popup di conferma salvataggio automatico
 function mostraToastSalvataggio() {
     const toast = document.getElementById('toastSalvataggio');
     toast.classList.add('show');
@@ -194,7 +193,6 @@ function mostraToastSalvataggio() {
     }, 2000);
 }
 
-// Funzioni per lo zoom
 function cambiaZoom(valore) {
     zoomAttuale = Math.max(0.6, Math.min(1.4, zoomAttuale + valore));
     const container = document.getElementById('contenitoreTabella');
@@ -202,7 +200,6 @@ function cambiaZoom(valore) {
     container.style.width = `${100 / zoomAttuale}%`;
 }
 
-// Reimposta zoom iniziale
 function reimpostaZoom() {
     zoomAttuale = 1.0;
     const container = document.getElementById('contenitoreTabella');
@@ -210,21 +207,30 @@ function reimpostaZoom() {
     container.style.width = '100%';
 }
 
-// Funzione di sblocco con Password da config.py
+// Sblocco via API per massima sicurezza
 function gestisciSblocco() {
     if (!tabellaSbloccata) {
         const passwordInserita = prompt("Inserisci la password di sicurezza per sbloccare la tabella:");
         if (passwordInserita === null) return;
-        
-        // Confronta la password inserita con quella configurata in config.py
-        const passwordCorretta = "{{ password_sblocco }}"; 
-        
-        if (passwordInserita === passwordCorretta) { 
-            tabellaSbloccata = true;
-            aggiornaStatoSblocco(true);
-        } else {
-            alert("Password errata!");
-        }
+
+        fetch('/api/verifica-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: passwordInserita })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                tabellaSbloccata = true;
+                aggiornaStatoSblocco(true);
+            } else {
+                alert("Password errata!");
+            }
+        })
+        .catch(err => {
+            console.error("Errore verifica password:", err);
+            alert("Errore di connessione al server.");
+        });
     } else {
         tabellaSbloccata = false;
         aggiornaStatoSblocco(false);
@@ -246,7 +252,6 @@ function aggiornaStatoSblocco(sbloccato) {
         btnSblocca.style.backgroundColor = '#475569';
         
         colonneParziali.forEach(el => el.style.display = 'table-cell');
-        
         selectStati.forEach(el => { el.disabled = false; el.style.cursor = 'default'; });
         dateInput.forEach(el => { el.disabled = false; el.style.cursor = 'default'; });
         importoInput.forEach(el => { el.disabled = false; el.style.cursor = 'default'; });
@@ -257,14 +262,12 @@ function aggiornaStatoSblocco(sbloccato) {
         btnSblocca.style.backgroundColor = '#0f172a';
         
         colonneParziali.forEach(el => el.style.display = 'none');
-        
         selectStati.forEach(el => { el.disabled = true; el.style.cursor = 'not-allowed'; });
         dateInput.forEach(el => { el.disabled = true; el.style.cursor = 'not-allowed'; });
         importoInput.forEach(el => { el.disabled = true; el.style.cursor = 'not-allowed'; });
     }
 }
 
-// Quando si modifica lo Stato
 function gestisciCambioStato(selettore) {
     const riga = selettore.closest('tr');
     const inputData = riga.querySelector('.input-data-pagamento');
@@ -273,18 +276,12 @@ function gestisciCambioStato(selettore) {
     const nuovoStato = selettore.value;
 
     if (nuovoStato === "Pagato") {
-        // Data di oggi in automatico
         const oggi = new Date().toISOString().split('T')[0];
         inputData.value = oggi;
-        
-        // Importo totale inserito automaticamente
         inputImporto.value = totale;
-        
-        // Stile riga torna normale
         riga.style.fontWeight = 'normal';
         riga.style.backgroundColor = '';
     } else if (nuovoStato === "Parziale") {
-        // Se parziale e non c'è valore, suggerisce metà del totale
         if (!inputImporto.value || parseFloat(inputImporto.value) >= totale) {
             inputImporto.value = (totale / 2).toFixed(2);
         }
@@ -300,7 +297,6 @@ function gestisciCambioStato(selettore) {
     salvaModificaRiga(selettore);
 }
 
-// API di salvataggio in tempo reale con Toast di avvenuto salvataggio
 function salvaModificaRiga(elemento) {
     const riga = elemento.closest('tr');
     const fatturaId = riga.getAttribute('data-id');
@@ -324,6 +320,8 @@ function salvaModificaRiga(elemento) {
     .then(data => {
         if (data.success) {
             mostraToastSalvataggio();
+            // Ricarica la pagina dopo un piccolo delay per aggiornare i KPI in alto
+            setTimeout(() => location.reload(), 800);
         } else {
             alert("Errore durante il salvataggio dei dati: " + data.message);
         }
@@ -333,7 +331,7 @@ function salvaModificaRiga(elemento) {
     });
 }
 
-// Codice filtri standard
+// Gestione Pannello Filtri
 const btnToggle = document.getElementById('toggleFiltri');
 const pannello = document.getElementById('pannelloFiltri');
 const urlParams = new URLSearchParams(window.location.search);
@@ -357,12 +355,11 @@ function azzeraFiltri() {
     font-weight: bold;
 }
 
-/* Stile per il popup di notifica salvataggio automatico */
 .toast-notifica {
     position: fixed;
     bottom: 20px;
     right: 20px;
-    background-color: #10B981; /* Verde Smeraldo */
+    background-color: #10B981;
     color: white;
     padding: 12px 24px;
     border-radius: 8px;
