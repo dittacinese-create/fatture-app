@@ -353,11 +353,11 @@ def vedi_fattura(fattura_id):
         cur.execute("SELECT * FROM clienti WHERE id = %s", (f["cliente_id"],))
         cliente = cur.fetchone()
     
-    # CORREZIONE BUG 1: Se non c'è una relazione con la tabella clienti, 
-    # crea un oggetto cliente fittizio col nome salvato sulla fattura (es. GUARNERO S.R.L.)
-    if not cliente:
-        nome_cliente_fallback = f.get("cliente_nome") or "Cliente Generico"
-        cliente = {"nome": nome_cliente_fallback, "id": None}
+    # FIX CLIENTE GENERICO: Se non esiste una relazione con la tabella clienti,
+    # imposta il nome prendendolo dal campo cliente_nome memorizzato nella fattura
+    if not cliente or not cliente["nome"]:
+        nome_real = f.get("cliente_nome") or "Cliente Generico"
+        cliente = {"nome": nome_real, "id": None}
     
     cur.execute("SELECT * FROM prodotti ORDER BY id ASC")
     prodotti = cur.fetchall()
@@ -392,7 +392,7 @@ def vedi_fattura(fattura_id):
     fattura_dict = dict(f)
     regime_str = str(fattura_dict.get("regime_iva") or "22").strip().lower()
     
-    # Determina l'aliquota per la visualizzazione
+    # Determina l'aliquota IVA
     if any(term in regime_str for term in ["0", "reverse", "esente", "non imponibile", "rc"]):
         aliquota = 0.0
     else:
@@ -403,7 +403,7 @@ def vedi_fattura(fattura_id):
         except:
             aliquota = 22.0
 
-    # --- CALCOLO DEI TOTALI DAI DATI DELLE RIGHE ---
+    # Calcolo totali dalle righe
     if f["tipo"] == "FORNITURA":
         valore_imponibile = sum(float(r["totale"] or 0.0) for r in righe_ddt)
     else:
@@ -416,12 +416,11 @@ def vedi_fattura(fattura_id):
         valore_iva = valore_imponibile * (aliquota / 100.0)
         valore_totale = valore_imponibile + valore_iva
 
-    # CORREZIONE BUG 2: Se la fattura non ha righe (valore_totale == 0),
-    # ma ha un valore 'totale' salvato nel database, usiamo quello!
+    # FIX TOTALE VUOTO / FATTURE DA STORICO:
+    # Se le righe non esistono ma c'è un totale nel DB, usiamo il valore memorizzato
     totale_db = float(f.get("totale") or 0.0)
     if valore_totale == 0.0 and totale_db > 0.0:
         valore_totale = totale_db
-        # Se non ci sono righe, calcola a ritroso l'imponibile e l'IVA per la vista
         if aliquota > 0:
             valore_imponibile = valore_totale / (1 + (aliquota / 100.0))
             valore_iva = valore_totale - valore_imponibile
@@ -429,11 +428,17 @@ def vedi_fattura(fattura_id):
             valore_imponibile = valore_totale
             valore_iva = 0.0
 
-    # Aggiorna il valore per il template
     fattura_dict["totale"] = valore_totale
 
+    # FIX STATO PAGAMENTO STANDARD: Normalizza lo stato in minuscolo per il template
+    stato_raw = str(fattura_dict.get("stato_pagamento") or "").lower().strip()
+    fattura_dict["stato_pagamento_clean"] = stato_raw
+
     if "totale_pagato" not in fattura_dict or fattura_dict["totale_pagato"] is None:
-        fattura_dict["totale_pagato"] = valore_totale if str(fattura_dict.get("stato_pagamento")).lower() in ["pagata", "pagato"] else 0.0
+        if stato_raw in ["pagata", "pagato"]:
+            fattura_dict["totale_pagato"] = valore_totale
+        else:
+            fattura_dict["totale_pagato"] = 0.0
 
     return render_template(
         "fattura_dettaglio.html", 

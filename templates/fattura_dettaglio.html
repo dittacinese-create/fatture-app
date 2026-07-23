@@ -48,8 +48,9 @@
     <div class="form-row" style="flex-wrap:wrap; gap:1.5rem; align-items:flex-end;">
         <div>
             <div style="font-size:12px; color:#6b7280; margin-bottom:3px;">Cliente</div>
-            <div style="font-weight:600;">{{ fattura.cliente_nome }}</div>
-            <div style="font-size:13px; color:#6b7280;">{{ fattura.indirizzo }}</div>
+            <!-- FIX CLIENTE: Usiamo cliente.nome che ora ha sempre il fallback sul nome reale -->
+            <div style="font-weight:600;">{{ cliente.nome if cliente and cliente.nome else (fattura.cliente_nome or 'Cliente Generico') }}</div>
+            <div style="font-size:13px; color:#6b7280;">{{ fattura.indirizzo or '' }}</div>
         </div>
         <div class="form-group" style="margin-bottom:0; min-width:120px;">
             <label style="font-size:12px; color:#6b7280;">Numero fattura</label>
@@ -86,11 +87,12 @@
         <div class="form-row" style="flex-wrap:wrap; align-items:flex-end;">
             <div class="form-group" style="min-width:140px;">
                 <label>Stato pagamento</label>
+                <!-- FIX STATO PAGAMENTO: Confronto tollerante usando stato_pagamento_clean -->
                 <select id="stato_pagamento" {% if fattura.stato == "CHIUSA" %}disabled{% endif %}>
-                    <option value="Non pagata" {% if fattura.stato_pagamento == "Non pagata" or not fattura.stato_pagamento %}selected{% endif %}>Non pagata</option>
-                    <option value="Parziale" {% if fattura.stato_pagamento == "Parziale" %}selected{% endif %}>Parziale</option>
-                    <option value="In attesa" {% if fattura.stato_pagamento == "In attesa" %}selected{% endif %}>In attesa</option>
-                    <option value="Pagata" {% if fattura.stato_pagamento == "Pagata" %}selected{% endif %}>Pagata</option>
+                    <option value="Non pagata" {% if fattura.stato_pagamento_clean in ['non pagata', 'non pagato', ''] %}selected{% endif %}>Non pagata</option>
+                    <option value="Parziale" {% if fattura.stato_pagamento_clean == 'parziale' %}selected{% endif %}>Parziale</option>
+                    <option value="In attesa" {% if fattura.stato_pagamento_clean == 'in attesa' %}selected{% endif %}>In attesa</option>
+                    <option value="Pagata" {% if fattura.stato_pagamento_clean in ['pagata', 'pagato'] %}selected{% endif %}>Pagata</option>
                 </select>
             </div>
             <div class="form-group" style="min-width:130px;">
@@ -117,9 +119,9 @@
             </div>
             {% endif %}
         </div>
-        {% set totale_reale = totale if (fattura.regime_iva|string in ["22", "22.0"]) else imponibile %}
+        <!-- FIX RESIDUO: Calcolo sicuro sul totale finale corretto -->
         <div style="font-size: 13px; color: #4b5563; margin-top: 8px; font-weight: 500;">
-            Residuo da riscuotere: <span style="color: #b91c1c; font-weight: 600;">€ {{ "%.2f"|format(totale_reale - (fattura.totale_pagato or 0.0)) }}</span>
+            Residuo da riscuotere: <span style="color: #b91c1c; font-weight: 600;">€ {{ "%.2f"|format(totale - (fattura.totale_pagato or 0.0)) }}</span>
         </div>
     </div>
 </div>
