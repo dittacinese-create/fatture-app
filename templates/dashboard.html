@@ -33,23 +33,23 @@
         </button>
     </div>
 
-    <!-- RIGA KPI SCURA ED ELEGANTE -->
+    <!-- RIGA KPI SCURA ED ELEGANTE (CON AGGIORNAMENTO DINAMICO ID) -->
     <div style="display: flex; gap: 2px; background-color: #0f172a; padding: 4px; border-radius: 8px; color: white; width: 100%;">
         <div style="flex: 1; padding: 12px 20px; text-align: center; border-right: 1px solid #1e293b;">
             <span style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Totale Fatturato (2026)</span>
-            <div style="font-size: 20px; font-weight: bold; color: #f8fafc; margin-top: 4px;">
+            <div id="kpi_totale" style="font-size: 20px; font-weight: bold; color: #f8fafc; margin-top: 4px;">
                 € {{ "{:,.2f}".format(totale_generale).replace(',', 'X').replace('.', ',').replace('X', '.') }}
             </div>
         </div>
         <div style="flex: 1; padding: 12px 20px; text-align: center; border-right: 1px solid #1e293b;">
             <span style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Totale Pagato</span>
-            <div style="font-size: 20px; font-weight: bold; color: #4ade80; margin-top: 4px;">
+            <div id="kpi_pagato" style="font-size: 20px; font-weight: bold; color: #4ade80; margin-top: 4px;">
                 € {{ "{:,.2f}".format(totale_pagato).replace(',', 'X').replace('.', ',').replace('X', '.') }}
             </div>
         </div>
         <div style="flex: 1; padding: 12px 20px; text-align: center;">
             <span style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Totale Mancante</span>
-            <div style="font-size: 20px; font-weight: bold; color: #f87171; margin-top: 4px;">
+            <div id="kpi_mancante" style="font-size: 20px; font-weight: bold; color: #f87171; margin-top: 4px;">
                 € {{ "{:,.2f}".format(totale_mancante).replace(',', 'X').replace('.', ',').replace('X', '.') }}
             </div>
         </div>
@@ -108,7 +108,7 @@
 
 <!-- CONTENITORE TABELLA CON SUPPORTO ZOOM -->
 <div id="contenitoreTabella" class="card" style="padding: 0; overflow-x: auto; border: 1px solid #cbd5e1; border-radius: 4px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transform-origin: top left; transition: transform 0.15s ease;">
-    <table class="tabella-sheets" style="width: 100%; border-collapse: collapse; font-family: Arial, sans-serif; font-size: 13px; color: #1c1c1c;">
+    <table id="tabella_dashboard" class="tabella-sheets" style="width: 100%; border-collapse: collapse; font-family: Arial, sans-serif; font-size: 13px; color: #1c1c1c;">
         <thead>
             <tr style="background-color: #f2c4bc; text-align: left;">
                 <th style="border: 1px solid #cbd5e1; padding: 8px 10px; font-weight: bold; width: 80px; text-align: center;">N. Fattura</th>
@@ -126,24 +126,30 @@
             {% for f in fatture %}
             {% set stato_raw = (f.stato_pagamento or '') | string | lower | trim %}
             
-            <tr data-id="{{ f.id }}" data-totale="{{ f.importo_totale | float }}" style="border-bottom: 1px solid #cbd5e1; {% if loop.index is odd %}background-color: #fafafa;{% endif %} {% if stato_raw not in ['pagato', 'pagata'] %}font-weight: bold; background-color: #fffbeb;{% endif %}">
+            {# Formattazione date sicura GG/MM/AAAA #}
+            {% set d_fat = f.data_fattura or f.data or '' %}
+            {% set d_scad = f.data_scadenza or '' %}
+            {% set data_fat_fmt = d_fat[8:10] + '/' + d_fat[5:7] + '/' + d_fat[0:4] if d_fat|length >= 10 and d_fat[4] == '-' else d_fat %}
+            {% set data_scad_fmt = d_scad[8:10] + '/' + d_scad[5:7] + '/' + d_scad[0:4] if d_scad|length >= 10 and d_scad[4] == '-' else d_scad %}
+            
+            <tr class="riga-fattura" data-id="{{ f.id }}" data-totale="{{ f.importo_totale | float }}" style="border-bottom: 1px solid #cbd5e1; {% if loop.index is odd %}background-color: #fafafa;{% endif %} {% if stato_raw not in ['pagato', 'pagata'] %}font-weight: bold; background-color: #fffbeb;{% endif %}">
                 <td style="border: 1px solid #cbd5e1; padding: 7px 10px; text-align: center;">
-                    {{ f.numero_fattura or '' }}
+                    {{ f.numero_fattura or f.numero or '' }}
                 </td>
                 <td style="border: 1px solid #cbd5e1; padding: 7px 10px;">
-                    {{ f.cliente_nome or '' }}
+                    {{ f.cliente_nome or f.nome_visualizzato or '' }}
                 </td>
-                <td style="border: 1px solid #cbd5e1; padding: 7px 10px; text-align: center;">
-                    {{ f.data_fattura or '' }}
+                <td style="border: 1px solid #cbd5e1; padding: 7px 10px; text-align: center; white-space: nowrap;">
+                    {{ data_fat_fmt or '—' }}
                 </td>
-                <td style="border: 1px solid #cbd5e1; padding: 7px 10px; text-align: center;">
-                    {{ f.data_scadenza or '' }}
+                <td style="border: 1px solid #cbd5e1; padding: 7px 10px; text-align: center; white-space: nowrap;">
+                    {{ data_scad_fmt or '—' }}
                 </td>
                 <td style="border: 1px solid #cbd5e1; padding: 7px 10px; text-align: right;">
                     € {{ "{:,.2f}".format(f.importo_totale | float).replace(',', 'X').replace('.', ',').replace('X', '.') }}
                 </td>
                 <td style="border: 1px solid #cbd5e1; padding: 7px 10px;">
-                    {{ f.note or '' }}
+                    {{ f.note or '—' }}
                 </td>
                 
                 <!-- Colonna Stato Pagamento (Interattiva) -->
@@ -205,6 +211,35 @@ function reimpostaZoom() {
     const container = document.getElementById('contenitoreTabella');
     container.style.transform = 'scale(1)';
     container.style.width = '100%';
+}
+
+/* RICALCOLO DINAMICO DEI TOTALI KPI IN TEMPO REALE */
+function ricalcolaTotaliKPI() {
+    let sumTotale = 0;
+    let sumPagato = 0;
+
+    const righe = document.querySelectorAll('#tabella_dashboard tbody tr.riga-fattura');
+    righe.forEach(riga => {
+        const impTotale = parseFloat(riga.getAttribute('data-totale')) || 0;
+        const stato = riga.querySelector('.selettore-stato').value;
+        const impParziale = parseFloat(riga.querySelector('.input-importo-parziale').value) || 0;
+
+        sumTotale += impTotale;
+
+        if (stato === "Pagato") {
+            sumPagato += impTotale;
+        } else if (stato === "Parziale") {
+            sumPagato += impParziale;
+        }
+    });
+
+    const sumMancante = sumTotale - sumPagato;
+
+    const fmtEuro = (val) => "€ " + val.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    document.getElementById('kpi_totale').textContent = fmtEuro(sumTotale);
+    document.getElementById('kpi_pagato').textContent = fmtEuro(sumPagato);
+    document.getElementById('kpi_mancante').textContent = fmtEuro(sumMancante);
 }
 
 // Sblocco via API per massima sicurezza
@@ -294,6 +329,8 @@ function gestisciCambioStato(selettore) {
         riga.style.backgroundColor = '#fffbeb';
     }
 
+    // Aggiorna istantaneamente i KPI a schermo
+    ricalcolaTotaliKPI();
     salvaModificaRiga(selettore);
 }
 
@@ -303,6 +340,9 @@ function salvaModificaRiga(elemento) {
     const stato = riga.querySelector('.selettore-stato').value;
     const dataPagamento = riga.querySelector('.input-data-pagamento').value;
     const importoPagato = riga.querySelector('.input-importo-parziale').value;
+
+    // Aggiorna KPI in caso di inserimento/modifica importo parziale manuale
+    ricalcolaTotaliKPI();
 
     fetch('/api/aggiorna_stato', {
         method: 'POST',
@@ -320,8 +360,6 @@ function salvaModificaRiga(elemento) {
     .then(data => {
         if (data.success) {
             mostraToastSalvataggio();
-            // Ricarica la pagina dopo un piccolo delay per aggiornare i KPI in alto
-            setTimeout(() => location.reload(), 800);
         } else {
             alert("Errore durante il salvataggio dei dati: " + data.message);
         }
