@@ -412,7 +412,12 @@ async function inviaRigaManualeAsincrona(fattura_id) {
 
     if (!desc) { alert("Inserisci una descrizione."); return; }
     if (!qty || parseFloat(qty) <= 0) { alert("Inserisci una quantità valida."); return; }
-    if (!prezzo || parseFloat(prezzo) < 0) { alert("Inserisci un prezzo valido."); return; }
+    
+    // Controlla solo che sia stato inserito un numero (permette anche i valori negativi per gli acconti)
+    if (prezzo === "" || isNaN(parseFloat(prezzo))) { 
+        alert("Inserisci un prezzo valido."); 
+        return; 
+    }
 
     btn.disabled = true;
     btn.textContent = "Aggiunta...";
