@@ -1541,7 +1541,6 @@ def nuova_nota_api():
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     data_oggi = datetime.now().strftime("%Y-%m-%d")
     try:
-        # Usiamo un approccio sicuro: inseriamo i valori provando a fare il cast esplicito a TEXT
         cur.execute("""
             INSERT INTO note (titolo, contenuto, data_creazione, data_modifica) 
             VALUES ('Senza titolo', '', %s::TEXT, %s::TEXT) 
@@ -1549,10 +1548,9 @@ def nuova_nota_api():
         """, (data_oggi, data_oggi))
         nuovo_id = cur.fetchone()["id"]
         db.commit()
-        return jsonify({"success": True, "id": nuevo_id})
+        return jsonify({"success": True, "id": nuovo_id}) # Corretto nuevo_id -> nuovo_id
     except Exception as e:
         db.rollback()
-        # Se fallisce per mismatch di tipo (colonne effettivamente TIMESTAMP nel DB fisico), usiamo NOW()
         try:
             cur.execute("""
                 INSERT INTO note (titolo, contenuto, data_creazione, data_modifica) 
@@ -1736,7 +1734,21 @@ def export_prodotti_backup():
     return Response(output, mimetype="text/plain", headers={"Content-Disposition": f"attachment;filename={filename}"})
 
 # ==============================================================================
-# 14. AVVIO APPLICAZIONE
+# 14. CONTROLLO PASSWORD
+# ==============================================================================
+@app.route("/verifica_password_eliminazione", methods=["POST"])
+def verifica_password_eliminazione():
+    data = request.get_json() or {}
+    password_inserita = data.get("password", "")
+    
+    # Confronta la password inviata con quella definita nelle variabili di configurazione
+    if password_inserita == PASSWORD_ACCESSO:
+        return jsonify({"success": True})
+    else:
+        return jsonify({"success": False, "message": "Password errata"}), 401
+
+# ==============================================================================
+# 15. AVVIO APPLICAZIONE
 # ==============================================================================
 
 if __name__ == "__main__":

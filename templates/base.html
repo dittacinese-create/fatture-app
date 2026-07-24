@@ -58,7 +58,7 @@
             <span class="icon">📄</span> Fatture
         </a>
         
-        <!-- NUOVA VOCE: DASHBOARD ANALISI -->
+        <!-- DASHBOARD ANALISI -->
         <a href="/dashboard" class="{{ 'active' if request.path == '/dashboard' else '' }}" onclick="closeMenu()">
             <span class="icon">📊</span> Dashboard
         </a>
@@ -84,7 +84,25 @@
     {% block content %}{% endblock %}
 </div>
 
+<!-- ================================================================= -->
+<!-- MODALE GRAFICA REUSABILE PER SICUREZZA ELIMINAZIONE -->
+<!-- ================================================================= -->
+<div id="modalPasswordEliminazione" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
+    <div style="background:#fff; padding:24px; border-radius:12px; max-width:400px; width:90%; box-shadow:0 10px 25px rgba(0,0,0,0.2);">
+        <h3 style="margin-top:0; color:#1a1a2e; font-size:18px;">🔒 Password di Sicurezza</h3>
+        <p style="color:#6b7280; font-size:14px; margin-bottom:15px;" id="testo_conferma_elimina">Confermi di voler procedere con l'eliminazione?</p>
+        
+        <input type="password" id="input_password_elimina" placeholder="Inserisci password..." style="width:100%; padding:10px 12px; margin-bottom:15px; border:1px solid #d0d5dd; border-radius:6px; box-sizing:border-box; font-size:14px;" onkeypress="if(event.key === 'Enter') confermaEliminazioneConPassword();">
+        
+        <div style="display:flex; justify-content:flex-end; gap:10px;">
+            <button type="button" onclick="chiudiModalEliminazione()" class="btn" style="background:#f3f4f6; color:#374151; border:none; padding:8px 16px; border-radius:6px; cursor:pointer;">Annulla</button>
+            <button type="button" onclick="confermaEliminazioneConPassword()" class="btn danger" style="background:#dc2626; color:#fff; border:none; padding:8px 16px; border-radius:6px; cursor:pointer;">Conferma ed Elimina</button>
+        </div>
+    </div>
+</div>
+
 <script>
+/* --- GESTIONE SIDEBAR --- */
 function toggleMenu() {
     document.getElementById("sidebar").classList.toggle("open");
     document.getElementById("overlay").classList.toggle("open");
@@ -92,6 +110,50 @@ function toggleMenu() {
 function closeMenu() {
     document.getElementById("sidebar").classList.remove("open");
     document.getElementById("overlay").classList.remove("open");
+}
+
+/* --- GESTIONE MODALE SICUREZZA ELIMINAZIONE --- */
+let urlEliminazioneCorrente = "";
+
+function richiediPasswordEliminazione(nomeElemento, urlEliminazione) {
+    urlEliminazioneCorrente = urlEliminazione;
+    document.getElementById("testo_conferma_elimina").textContent = "Confermi di voler eliminare " + nomeElemento + "?";
+    document.getElementById("input_password_elimina").value = "";
+    document.getElementById("modalPasswordEliminazione").style.display = "flex";
+    setTimeout(() => document.getElementById("input_password_elimina").focus(), 100);
+    return false; // Blocca la navigazione immediata
+}
+
+function chiudiModalEliminazione() {
+    document.getElementById("modalPasswordEliminazione").style.display = "none";
+    urlEliminazioneCorrente = "";
+}
+
+function confermaEliminazioneConPassword() {
+    const password = document.getElementById("input_password_elimina").value;
+    
+    if(!password) {
+        alert("Inserisci la password!");
+        return;
+    }
+
+    // Chiamata AJAX al backend Flask per la verifica
+    fetch("/verifica_password_eliminazione", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: password })
+    })
+    .then(response => {
+        if (response.ok) {
+            window.location.href = urlEliminazioneCorrente;
+        } else {
+            alert("Password errata! Eliminazione annullata.");
+        }
+    })
+    .catch(error => {
+        console.error("Errore:", error);
+        alert("Si è verificato un errore durante la verifica.");
+    });
 }
 </script>
 

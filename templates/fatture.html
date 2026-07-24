@@ -121,8 +121,8 @@
                         <a href="/pdf/{{ f.id }}" class="action-link" style="color:#059669;">⬇ PDF</a>
                         {% endif %}
                         &nbsp;·&nbsp;
-                        <a href="/delete_fattura/{{ f.id }}"
-                           onclick="return richiediPasswordEliminazione('{{ f.numero }}')"
+                        <a href="#" 
+                           onclick="return richiediPasswordEliminazione('la fattura n. {{ f.numero }}', '/delete_fattura/{{ f.id }}')"
                            class="action-link danger">Elimina</a>
                     </td>
                 </tr>
@@ -145,8 +145,6 @@
 </div>
 
 <script>
-const passwordCorretta = "{{ password_eliminazione }}";
-
 /* --- GESTIONE ZOOM TABELLA --- */
 let currentZoom = 1.0;
 
@@ -172,26 +170,7 @@ function applicazoom() {
     }
 }
 
-/* --- GESTIONE ELIMINAZIONE & FILTRI --- */
-function richiediPasswordEliminazione(numeroFattura) {
-    if (!confirm("Sei sicuro di voler eliminare la fattura n. " + numeroFattura + "?")) {
-        return false;
-    }
-    
-    const passwordInserita = prompt("Inserisci la password di sicurezza per completare l'eliminazione:");
-    
-    if (passwordInserita === null) {
-        return false; 
-    }
-    
-    if (passwordInserita === passwordCorretta) {
-        return true; 
-    } else {
-        alert("Password errata! Eliminazione annullata.");
-        return false; 
-    }
-}
-
+/* --- GESTIONE FILTRI --- */
 function filtraFatture() {
     var cliente = document.getElementById("filtro_cliente").value.toLowerCase().trim();
     var stato = document.getElementById("filtro_stato").value; 
