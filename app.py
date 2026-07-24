@@ -255,7 +255,8 @@ def fatture():
         query += " AND f.tipo = %s"
         params.append(filtro_tipo)
         
-    query += " ORDER BY f.data DESC, f.numero DESC"
+    # MODIFICA QUI: Ordinamento puramente numerico decrescente (10, 9, 8...)
+    query += " ORDER BY CAST(REGEXP_REPLACE(NULLIF(f.numero, ''), '[^0-9]', '', 'g') AS INTEGER) DESC"
     
     cur.execute(query, params)
     elenco_fatture = cur.fetchall()
@@ -269,8 +270,7 @@ def fatture():
         filtro_stato=filtro_stato or "",
         filtro_tipo=filtro_tipo or ""
     )
-
-
+    
 @app.route("/nuova_fattura", methods=["GET", "POST"])
 def nueva_fattura():
     db = get_db()
