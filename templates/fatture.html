@@ -48,9 +48,9 @@
 </div>
 
 <!-- CONTENITORE RESPONSIVO CON SCROLLBAR PER EVITARE TAGLI AI BORDI -->
-<div style="width: 100%; overflow-x: auto; background: #ffffff; border-radius: 8px; border: 1px solid #e5e7eb; padding-right: 1rem;">
-    <div id="tabella_fatture_container" style="transform-origin: top left; transition: transform 0.15s ease, width 0.15s ease; width: 100%;">
-        <table id="tabella_fatture" class="table" style="width: 100%; min-width: 950px; margin-bottom: 0;">
+<div class="table-wrap" style="width: 100%; overflow-x: auto; background: #ffffff; border-radius: 8px; border: 1px solid #e5e7eb;">
+    <div id="tabella_fatture_container" style="transform-origin: top left; transition: transform 0.15s ease;">
+        <table id="tabella_fatture" class="table" style="width: 100%; margin-bottom: 0;">
             <thead>
                 <tr>
                     <th>Numero</th>
@@ -61,7 +61,7 @@
                     <th>Scadenza</th>
                     <th>Note</th>
                     <th>Pagamento</th>
-                    <th style="text-align: right; padding-right: 1.25rem;">Azioni</th>
+                    <th style="text-align: center;">Azioni</th>
                 </tr>
             </thead>
             <tbody>
@@ -98,7 +98,7 @@
                     
                     <td><strong>€ {{ "%.2f"|format(f.totale if f.totale else 0) }}</strong></td>
                     <td style="color:#6b7280; font-size:13px;">{{ scad_fmt }}</td>
-                    <td style="max-width:140px; color:#6b7280; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                    <td style="max-width:120px; color:#6b7280; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                         {{ f.note or "—" }}
                     </td>
                     
@@ -114,7 +114,7 @@
                         {% endif %}
                     </td>
                     
-                    <td style="white-space:nowrap; text-align: right; padding-right: 1.25rem;">
+                    <td style="white-space:nowrap; text-align: center;">
                         <a href="/fattura/{{ f.id }}" class="action-link">Apri</a>
                         {% if f.stato == "CHIUSA" %}
                         &nbsp;·&nbsp;
