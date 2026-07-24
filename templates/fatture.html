@@ -48,9 +48,9 @@
 </div>
 
 <!-- CONTENITORE RESPONSIVO CON SCROLLBAR PER EVITARE TAGLI AI BORDI -->
-<div style="width: 100%; overflow-x: auto; background: #ffffff; border-radius: 8px; border: 1px solid #e5e7eb;">
+<div style="width: 100%; overflow-x: auto; background: #ffffff; border-radius: 8px; border: 1px solid #e5e7eb; padding-right: 1rem;">
     <div id="tabella_fatture_container" style="transform-origin: top left; transition: transform 0.15s ease, width 0.15s ease; width: 100%;">
-        <table id="tabella_fatture" class="table" style="width: 100%; margin-bottom: 0;">
+        <table id="tabella_fatture" class="table" style="width: 100%; min-width: 950px; margin-bottom: 0;">
             <thead>
                 <tr>
                     <th>Numero</th>
@@ -61,7 +61,7 @@
                     <th>Scadenza</th>
                     <th>Note</th>
                     <th>Pagamento</th>
-                    <th>Azioni</th>
+                    <th style="text-align: right; padding-right: 1.25rem;">Azioni</th>
                 </tr>
             </thead>
             <tbody>
@@ -114,7 +114,7 @@
                         {% endif %}
                     </td>
                     
-                    <td style="white-space:nowrap;">
+                    <td style="white-space:nowrap; text-align: right; padding-right: 1.25rem;">
                         <a href="/fattura/{{ f.id }}" class="action-link">Apri</a>
                         {% if f.stato == "CHIUSA" %}
                         &nbsp;·&nbsp;
