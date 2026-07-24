@@ -7,19 +7,21 @@ def ripristina_totali():
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
 
-        # 1. Ripristino Silvio Benedetto (N. 31 -> € 3.067,93)
+        # Ripristino Fatture 18 e 19 (Aprile)
+        cur.execute("UPDATE fatture SET totale = 43745.78 WHERE numero = '18';")
+        cur.execute("UPDATE fatture SET totale = 3067.93 WHERE numero = '19';")
+
+        # Ripristino Fatture 30 e 31 (Maggio)
+        cur.execute("UPDATE fatture SET totale = 43745.78 WHERE numero = '30';")
         cur.execute("UPDATE fatture SET totale = 3067.93 WHERE numero = '31';")
 
-        # 2. Ripristino Saxso S.r.l. (N. 30 -> € 43.745,78)
-        cur.execute("UPDATE fatture SET totale = 43745.78 WHERE numero = '30';")
-
-        # 3. Ripristino Alpe (N. 37 -> € 8.756,00)
-        cur.execute("UPDATE fatture SET totale = 8756.00, regime_iva = 'RC' WHERE numero = '37';")
+        # Allinea 'totale_pagato' = 'totale' per TUTTE le fatture segnate come PAGATA
+        cur.execute("UPDATE fatture SET totale_pagato = totale WHERE LOWER(stato_pagamento) IN ('pagata', 'pagato');")
 
         conn.commit()
         cur.close()
         conn.close()
-        print("✅ RIPRISTINO COMPLETATO! I totali sono stati aggiornati nel DB.")
+        print("✅ RIPRISTINO COMPLETATO! Totali e Pagamenti allineati nel Database.")
     except Exception as e:
         print(f"❌ Errore durante il ripristino: {e}")
 

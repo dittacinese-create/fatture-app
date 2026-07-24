@@ -434,10 +434,13 @@ def vedi_fattura(fattura_id):
     stato_raw = str(fattura_dict.get("stato_pagamento") or "").lower().strip()
     fattura_dict["stato_pagamento_clean"] = stato_raw
 
-    if "totale_pagato" not in fattura_dict or fattura_dict["totale_pagato"] is None:
-        if stato_raw in ["pagata", "pagato"]:
+   # FIX ALLINEAMENTO TOTALE PAGATO / RESIDUO
+    tot_pag = fattura_dict.get("totale_pagato")
+    if stato_raw in ["pagata", "pagato"]:
+        if tot_pag is None or float(tot_pag or 0.0) == 0.0:
             fattura_dict["totale_pagato"] = valore_totale
-        else:
+    else:
+        if tot_pag is None:
             fattura_dict["totale_pagato"] = 0.0
 
     return render_template(
