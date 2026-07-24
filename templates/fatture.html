@@ -6,50 +6,9 @@
     <a href="/nuova_fattura" class="btn btn-primary">+ Nuova fattura</a>
 </div>
 
-<!-- FILTRI E CONTROLLO ZOOM -->
-<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.25rem; flex-wrap:wrap; gap:1rem;">
-    <!-- FILTRI -->
-    <div style="display:flex; gap:1rem; flex-wrap:wrap; align-items:center;">
-        <div class="search-bar" style="margin-bottom:0;">
-            <span class="search-icon">🔍</span>
-            <input type="text"
-                   id="filtro_cliente"
-                   placeholder="Cerca cliente..."
-                   oninput="filtraFatture()"
-                   autocomplete="off">
-        </div>
-        
-        <select id="filtro_stato" onchange="filtraFatture()"
-                style="padding:8px 12px; border:1px solid #d0d5dd; border-radius:8px; font-size:13.5px; background:#fff; color:#1a1a2e; cursor:pointer;">
-            <option value="">Tutti gli stati</option>
-            <option value="pagata">Pagata</option>
-            <option value="pagato">Pagato</option>
-            <option value="parziale">Parziale</option>
-            <option value="non pagata">Non pagata</option>
-        </select>
-
-        <select id="filtro_tipo" onchange="filtraFatture()"
-                style="padding:8px 12px; border:1px solid #d0d5dd; border-radius:8px; font-size:13.5px; background:#fff; color:#1a1a2e; cursor:pointer;">
-            <option value="">Tutti i tipi</option>
-            <option value="fornitura">Fornitura</option>
-            <option value="manuale">Manuale</option>
-        </select>
-        <button onclick="resetFiltri()" class="btn" style="font-size:13px;">✕ Reset</button>
-    </div>
-
+<!-- FILTRI E CONTROLLO ZOOM (TUTTO SU UN'UNICA RIGA CON ZOOM A SINISTRA) -->
+<div style="display:flex; gap:0.75rem; margin-bottom:1.25rem; flex-wrap:wrap; align-items:center;">
     <!-- CONTROLLI ZOOM TABELLA -->
-    <div style="display: flex; align-items: center; gap: 6px; background: #ffffff; padding: 4px 8px; border-radius: 8px; border: 1px solid #d0d5dd;">
-        <span style="font-size: 12px; color: #6b7280; font-weight: 500;">Zoom:</span>
-        <button type="button" onclick="zoomTabella(-0.1)" class="btn" style="padding: 2px 8px; font-size: 12px; font-weight: bold; background: #f3f4f6;">-</button>
-        <span id="zoom_val" style="font-size: 12px; font-weight: 600; min-width: 38px; text-align: center;">100%</span>
-        <button type="button" onclick="zoomTabella(0.1)" class="btn" style="padding: 2px 8px; font-size: 12px; font-weight: bold; background: #f3f4f6;">+</button>
-        <button type="button" onclick="resetZoomTabella()" class="btn" style="padding: 2px 8px; font-size: 11px; background: #e5e7eb;">Reset</button>
-    </div>
-</div>
-
-<!-- FILTRI E CONTROLLO ZOOM (TUTTO A SINISTRA) -->
-<div style="display:flex; gap:1rem; margin-bottom:1.25rem; flex-wrap:wrap; align-items:center;">
-    <!-- CONTROLLI ZOOM -->
     <div style="display: flex; align-items: center; gap: 6px; background: #ffffff; padding: 6px 10px; border-radius: 8px; border: 1px solid #d0d5dd;">
         <span style="font-size: 13px; color: #6b7280; font-weight: 500;">Zoom:</span>
         <button type="button" onclick="zoomTabella(-0.1)" class="btn" style="padding: 2px 8px; font-size: 12px; font-weight: bold; background: #f3f4f6;">-</button>
@@ -58,6 +17,7 @@
         <button type="button" onclick="resetZoomTabella()" class="btn" style="padding: 2px 8px; font-size: 11px; background: #e5e7eb;">Reset</button>
     </div>
 
+    <!-- RICERCA CLIENTE -->
     <div class="search-bar" style="margin-bottom:0;">
         <span class="search-icon">🔍</span>
         <input type="text"
@@ -67,6 +27,7 @@
                autocomplete="off">
     </div>
     
+    <!-- FILTRO STATO -->
     <select id="filtro_stato" onchange="filtraFatture()"
             style="padding:8px 12px; border:1px solid #d0d5dd; border-radius:8px; font-size:13.5px; background:#fff; color:#1a1a2e; cursor:pointer;">
         <option value="">Tutti gli stati</option>
@@ -76,13 +37,111 @@
         <option value="non pagata">Non pagata</option>
     </select>
 
+    <!-- FILTRO TIPO -->
     <select id="filtro_tipo" onchange="filtraFatture()"
             style="padding:8px 12px; border:1px solid #d0d5dd; border-radius:8px; font-size:13.5px; background:#fff; color:#1a1a2e; cursor:pointer;">
         <option value="">Tutti i tipi</option>
         <option value="fornitura">Fornitura</option>
         <option value="manuale">Manuale</option>
     </select>
-    <button onclick="resetFiltri()" class="btn" style="font-size:13px;">✕ Reset filtri</button>
+    
+    <button type="button" onclick="resetFiltri()" class="btn" style="font-size:13px;">✕ Reset filtri</button>
+</div>
+
+<!-- CONTENITORE RESPONSIVO DELLA TABELLA -->
+<div class="table-wrap" style="width: 100%; overflow-x: auto; background: #ffffff; border-radius: 8px; border: 1px solid #e5e7eb;">
+    <div id="tabella_fatture_container" style="transform-origin: top left; transition: transform 0.15s ease;">
+        <table id="tabella_fatture" class="table" style="width: 100%; margin-bottom: 0;">
+            <thead>
+                <tr>
+                    <th>Numero</th>
+                    <th>Data</th>
+                    <th>Cliente</th>
+                    <th>Tipo</th>
+                    <th>Totale</th>
+                    <th>Scadenza</th>
+                    <th>Note</th>
+                    <th>Pagamento</th>
+                    <th style="text-align: center;">Azioni</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for f in fatture %}
+                {% set data_fmt = f.data[8:10] + '/' + f.data[5:7] + '/' + f.data[0:4] if f.data else '—' %}
+                {% set scad_fmt = f.data_scadenza[8:10] + '/' + f.data_scadenza[5:7] + '/' + f.data_scadenza[0:4] if f.data_scadenza else '—' %}
+                
+                {% set stato_normalizzato = (f.stato_pagamento or 'non pagata')|lower %}
+                
+                {# Rilevamento automatico tipo #}
+                {% set note_lower = (f.note or '')|lower %}
+                {% if f.tipo == "FORNITURA" or "fornitura" in note_lower %}
+                    {% set tipo_effettivo = "fornitura" %}
+                {% else %}
+                    {% set tipo_effettivo = "manuale" %}
+                {% endif %}
+                
+                <tr class="riga-dati" 
+                    data-cliente="{{ f.nome_visualizzato|lower if f.nome_visualizzato else (f.cliente_nome|lower or '') }}"
+                    data-stato="{{ stato_normalizzato }}"
+                    data-tipo="{{ tipo_effettivo }}">
+                    <td><strong>{{ f.numero }}</strong></td>
+                    <td>{{ data_fmt }}</td>
+                    <td>{{ f.nome_visualizzato if f.nome_visualizzato else (f.cliente_nome or 'Cliente Generico') }}</td>
+                    
+                    <td>
+                        {% if tipo_effettivo == "fornitura" %}
+                        <span class="badge badge-fornitura">Fornitura</span>
+                        {% else %}
+                        <span class="badge badge-manuale">Manuale</span>
+                        {% endif %}
+                    </td>
+                    
+                    <td><strong>€ {{ "%.2f"|format(f.totale if f.totale else 0) }}</strong></td>
+                    <td style="color:#6b7280; font-size:13px;">{{ scad_fmt }}</td>
+                    <td style="max-width:120px; color:#6b7280; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                        {{ f.note or "—" }}
+                    </td>
+                    
+                    <td>
+                        {% if stato_normalizzato in ["pagato", "pagata"] %}
+                        <span class="badge badge-pagata">Pagata</span>
+                        {% elif stato_normalizzato == "parziale" %}
+                        <span class="badge badge-attesa" style="background-color: #fef9c3; color: #a16207;">
+                            Parziale ({{ "€ %.2f"|format(f.totale_pagato or 0) }})
+                        </span>
+                        {% else %}
+                        <span class="badge badge-non-pagata">Non pagata</span>
+                        {% endif %}
+                    </td>
+                    
+                    <td style="white-space:nowrap; text-align: center;">
+                        <a href="/fattura/{{ f.id }}" class="action-link">Apri</a>
+                        {% if f.stato == "CHIUSA" %}
+                        &nbsp;·&nbsp;
+                        <a href="/pdf/{{ f.id }}" class="action-link" style="color:#059669;">⬇ PDF</a>
+                        {% endif %}
+                        &nbsp;·&nbsp;
+                        <a href="/delete_fattura/{{ f.id }}"
+                           onclick="return richiediPasswordEliminazione('{{ f.numero }}')"
+                           class="action-link danger">Elimina</a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="9" style="text-align:center; color:#9ca3af; padding:2rem;">
+                        Nessuna fattura. <a href="/nuova_fattura" class="action-link">Crea la prima</a>
+                    </td>
+                </tr>
+                {% endfor %}
+                
+                <tr id="nessun_risultato" style="display:none;">
+                    <td colspan="9" style="text-align:center; color:#9ca3af; padding:2rem;">
+                        Nessuna fattura corrisponde ai filtri impostati.
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
 </div>
 
 <script>
