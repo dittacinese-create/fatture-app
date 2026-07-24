@@ -6,7 +6,7 @@
     <a href="/nuova_fattura" class="btn btn-primary">+ Nuova fattura</a>
 </div>
 
-<!-- FILTRI E CONTROLLO ZOOM (TUTTO SU UN'UNICA RIGA CON ZOOM A SINISTRA) -->
+<!-- FILTRI E CONTROLLO ZOOM -->
 <div style="display:flex; gap:0.75rem; margin-bottom:1.25rem; flex-wrap:wrap; align-items:center;">
     <!-- CONTROLLI ZOOM TABELLA -->
     <div style="display: flex; align-items: center; gap: 6px; background: #ffffff; padding: 6px 10px; border-radius: 8px; border: 1px solid #d0d5dd;">
@@ -114,12 +114,18 @@
                         {% endif %}
                     </td>
                     
+                    <!-- AZIONI: PDF visibile SOLO se la fattura è CHIUSA -->
                     <td style="white-space:nowrap; text-align: center;">
                         <a href="/fattura/{{ f.id }}" class="action-link">Apri</a>
+                        
                         {% if f.stato == "CHIUSA" %}
-                        &nbsp;·&nbsp;
-                        <a href="/pdf/{{ f.id }}" class="action-link" style="color:#059669;">⬇ PDF</a>
+                            &nbsp;·&nbsp;
+                            <a href="/pdf/{{ f.id }}" target="_blank" class="action-link" style="color:#059669; font-weight:600;">⬇ PDF</a>
+                        {% else %}
+                            &nbsp;·&nbsp;
+                            <span style="color:#9ca3af; font-size:11px; font-style:italic;">(Aperta)</span>
                         {% endif %}
+
                         &nbsp;·&nbsp;
                         <a href="#" 
                            onclick="return richiediPasswordEliminazione('la fattura n. {{ f.numero }}', '/delete_fattura/{{ f.id }}')"
