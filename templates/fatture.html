@@ -50,7 +50,7 @@
 
 <!-- CONTENITORE RESPONSIVO DELLA TABELLA -->
 <div class="table-wrap" style="width: 100%; overflow-x: auto; background: #ffffff; border-radius: 8px; border: 1px solid #e5e7eb;">
-    <div id="tabella_fatture_container" style="transform-origin: top left; transition: transform 0.15s ease;">
+    <div id="tabella_fatture_container" style="width: 100%;">
         <table id="tabella_fatture" class="table" style="width: 100%; margin-bottom: 0;">
             <thead>
                 <tr>
@@ -151,7 +151,7 @@
 </div>
 
 <script>
-/* --- GESTIONE ZOOM TABELLA --- */
+/* --- GESTIONE ZOOM TABELLA PULITA (FONT E PADDING) --- */
 let currentZoom = 1.0;
 
 function zoomTabella(delta) {
@@ -165,13 +165,21 @@ function resetZoomTabella() {
 }
 
 function applicazoom() {
-    const container = document.getElementById("tabella_fatture_container");
+    const tabella = document.getElementById("tabella_fatture");
     const label = document.getElementById("zoom_val");
-    if(container) {
-        container.style.transform = `scale(${currentZoom})`;
-        container.style.width = `${100 / currentZoom}%`;
+    
+    if (tabella) {
+        // Scala la dimensione del testo mantenendo la tabella nella larghezza corretta
+        tabella.style.fontSize = `${13.5 * currentZoom}px`;
+        
+        // Scala proporzionalmente il padding delle celle
+        const celle = tabella.querySelectorAll("th, td");
+        celle.forEach(c => {
+            c.style.padding = `${8 * currentZoom}px ${10 * currentZoom}px`;
+        });
     }
-    if(label) {
+    
+    if (label) {
         label.textContent = `${Math.round(currentZoom * 100)}%`;
     }
 }
